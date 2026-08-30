@@ -15,6 +15,7 @@ struct MurphPlusApp: App {
             // rather than crashing opaquely on `try!`.
             fatalError("Failed to create ModelContainer: \(error)")
         }
+        try? DefaultTemplates.seedIfNeeded(context: container.mainContext)
     }
 
     var body: some Scene {
