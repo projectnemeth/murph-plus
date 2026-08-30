@@ -130,6 +130,14 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - MurphPlusTests
+    settings:
+      base:
+        # Required: without it the test bundle fails to code sign with
+        # "target does not have an Info.plist file and one is not being
+        # generated automatically". The app target is not enough — the test
+        # bundle needs its own.
+        GENERATE_INFOPLIST_FILE: true
+        SWIFT_VERSION: "5.0"
     dependencies:
       - target: MurphPlus
 schemes:
@@ -216,8 +224,8 @@ CloudKit. Skip this step and continue.
 
 - [ ] **Step 9: Run the test suite from the command line**
 
-Run: `xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
-Expected: `** TEST SUCCEEDED **`. If `iPhone 16` isn't an installed simulator, run `xcrun simctl list devicetypes` and substitute an available iPhone name in the `-destination` flag (use this substitution for every `xcodebuild` command in this plan).
+Run: `xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 17' -project MurphPlus.xcodeproj`
+Expected: `** TEST SUCCEEDED **`. If `iPhone 17` isn't an installed simulator, run `xcrun simctl list devicetypes` and substitute an available iPhone name in the `-destination` flag (use this substitution for every `xcodebuild` command in this plan).
 
 - [ ] **Step 10: Commit**
 
@@ -333,7 +341,7 @@ final class ModelTests: XCTestCase {
 
 - [ ] **Step 2: Run tests to verify they fail (types don't exist yet)**
 
-Run: `xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
+Run: `xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 17' -project MurphPlus.xcodeproj`
 Expected: build failure — `cannot find type 'WorkoutTemplate' in scope` (or similar)
 
 - [ ] **Step 3: Write the enums**
@@ -540,7 +548,7 @@ struct MurphPlusApp: App {
 
 - [ ] **Step 9: Regenerate the project and run tests**
 
-Run: `xcodegen generate && xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
+Run: `xcodegen generate && xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 17' -project MurphPlus.xcodeproj`
 Expected: `** TEST SUCCEEDED **`
 
 - [ ] **Step 10: Commit**
@@ -602,7 +610,7 @@ final class DefaultTemplatesTests: XCTestCase {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
+Run: `xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 17' -project MurphPlus.xcodeproj`
 Expected: `cannot find 'DefaultTemplates' in scope`
 
 - [ ] **Step 3: Implement seeding**
@@ -659,7 +667,7 @@ struct MurphPlusApp: App {
 
 - [ ] **Step 5: Regenerate and run tests**
 
-Run: `xcodegen generate && xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
+Run: `xcodegen generate && xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 17' -project MurphPlus.xcodeproj`
 Expected: `** TEST SUCCEEDED **`
 
 - [ ] **Step 6: Commit**
@@ -789,7 +797,7 @@ final class FatiguePredictionTests: XCTestCase {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
+Run: `xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 17' -project MurphPlus.xcodeproj`
 Expected: `cannot find type 'RoundThroughput' in scope`
 
 - [ ] **Step 3: Implement the prediction engine**
@@ -894,7 +902,7 @@ enum FatiguePrediction {
 
 - [ ] **Step 4: Regenerate and run tests**
 
-Run: `xcodegen generate && xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
+Run: `xcodegen generate && xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 17' -project MurphPlus.xcodeproj`
 Expected: `** TEST SUCCEEDED **`
 
 - [ ] **Step 5: Commit**
@@ -1012,7 +1020,7 @@ final class SessionEngineTests: XCTestCase {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
+Run: `xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 17' -project MurphPlus.xcodeproj`
 Expected: `cannot find 'SessionEngine' in scope`
 
 - [ ] **Step 3: Implement the state machine**
@@ -1108,7 +1116,7 @@ final class SessionEngine {
 
 - [ ] **Step 4: Regenerate and run tests**
 
-Run: `xcodegen generate && xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
+Run: `xcodegen generate && xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 17' -project MurphPlus.xcodeproj`
 Expected: `** TEST SUCCEEDED **`
 
 - [ ] **Step 5: Commit**
@@ -1190,7 +1198,7 @@ struct StartView: View {
 
 - [ ] **Step 2: Regenerate and build**
 
-Run: `xcodegen generate && xcodebuild build -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
+Run: `xcodegen generate && xcodebuild build -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 17' -project MurphPlus.xcodeproj`
 Expected: `** BUILD SUCCEEDED **`
 
 - [ ] **Step 3: Manual verification**
@@ -1287,7 +1295,7 @@ struct LiveSessionView: View {
 
 - [ ] **Step 2: Regenerate and build**
 
-Run: `xcodegen generate && xcodebuild build -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
+Run: `xcodegen generate && xcodebuild build -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 17' -project MurphPlus.xcodeproj`
 Expected: `** BUILD SUCCEEDED **`
 
 - [ ] **Step 3: Commit**
@@ -1374,7 +1382,7 @@ final class ResumableSessionFinderTests: XCTestCase {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
+Run: `xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 17' -project MurphPlus.xcodeproj`
 Expected: `cannot find 'ResumableSessionFinder' in scope`
 
 - [ ] **Step 3: Implement the finder**
@@ -1428,7 +1436,7 @@ struct ResumeSessionPrompt: View {
 
 - [ ] **Step 5: Regenerate and run tests**
 
-Run: `xcodegen generate && xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
+Run: `xcodegen generate && xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 17' -project MurphPlus.xcodeproj`
 Expected: `** TEST SUCCEEDED **`
 
 - [ ] **Step 6: Commit**
@@ -1520,7 +1528,7 @@ final class HistoryStatsTests: XCTestCase {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
+Run: `xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 17' -project MurphPlus.xcodeproj`
 Expected: `cannot find 'HistoryStats' in scope`
 
 - [ ] **Step 3: Implement the shared duration formatter**
@@ -1643,7 +1651,7 @@ struct HistoryListView: View {
 
 - [ ] **Step 6: Regenerate and run tests**
 
-Run: `xcodegen generate && xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
+Run: `xcodegen generate && xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 17' -project MurphPlus.xcodeproj`
 Expected: `** TEST SUCCEEDED **`
 
 - [ ] **Step 7: Commit**
@@ -1711,7 +1719,7 @@ final class RoundThroughputBuilderTests: XCTestCase {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
+Run: `xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 17' -project MurphPlus.xcodeproj`
 Expected: `cannot find 'RoundThroughputBuilder' in scope`
 
 - [ ] **Step 3: Implement `RoundThroughputBuilder`**
@@ -1822,7 +1830,7 @@ struct SessionDetailView: View {
 
 - [ ] **Step 5: Regenerate and run tests**
 
-Run: `xcodegen generate && xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
+Run: `xcodegen generate && xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 17' -project MurphPlus.xcodeproj`
 Expected: `** TEST SUCCEEDED **`
 
 - [ ] **Step 6: Commit**
@@ -1941,7 +1949,7 @@ In `MurphPlus/Views/History/SessionDetailView.swift`, add the control as the las
 
 - [ ] **Step 3: Regenerate and build**
 
-Run: `xcodegen generate && xcodebuild build -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
+Run: `xcodegen generate && xcodebuild build -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 17' -project MurphPlus.xcodeproj`
 Expected: `** BUILD SUCCEEDED **`
 
 - [ ] **Step 4: Commit**
@@ -2006,7 +2014,7 @@ final class CalendarMonthBuilderTests: XCTestCase {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
+Run: `xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 17' -project MurphPlus.xcodeproj`
 Expected: `cannot find 'CalendarMonthBuilder' in scope`
 
 - [ ] **Step 3: Implement `CalendarMonthBuilder`**
@@ -2124,7 +2132,7 @@ struct CalendarView: View {
 
 - [ ] **Step 5: Regenerate and run tests**
 
-Run: `xcodegen generate && xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
+Run: `xcodegen generate && xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 17' -project MurphPlus.xcodeproj`
 Expected: `** TEST SUCCEEDED **`
 
 - [ ] **Step 6: Commit**
@@ -2278,7 +2286,7 @@ struct MurphPlusApp: App {
 
 - [ ] **Step 4: Regenerate and run the full test suite**
 
-Run: `xcodegen generate && xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
+Run: `xcodegen generate && xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 17' -project MurphPlus.xcodeproj`
 Expected: `** TEST SUCCEEDED **`
 
 - [ ] **Step 5: End-to-end manual smoke test**
@@ -2467,7 +2475,7 @@ struct StartView: View {
 
 - [ ] **Step 3: Regenerate and build**
 
-Run: `xcodegen generate && xcodebuild build -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
+Run: `xcodegen generate && xcodebuild build -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 17' -project MurphPlus.xcodeproj`
 Expected: `** BUILD SUCCEEDED **`
 
 - [ ] **Step 4: Manual verification**
