@@ -41,6 +41,8 @@ murph-plus/
     Persistence/
       DefaultTemplates.swift
       ResumableSessionFinder.swift
+    Support/
+      DurationFormatting.swift
     Prediction/
       FatiguePrediction.swift
       RoundThroughputBuilder.swift
@@ -1441,13 +1443,19 @@ git commit -m "feat: add in-progress session resume detection and prompt"
 ### Task 9: History List View & Stats
 
 **Files:**
+- Create: `MurphPlus/Support/DurationFormatting.swift`
 - Create: `MurphPlus/Prediction/HistoryStats.swift`
 - Create: `MurphPlus/Views/History/HistoryListView.swift`
 - Test: `MurphPlusTests/HistoryStatsTests.swift`
 
+This task also introduces a shared `formatDuration` helper. Tasks 10 and 11 need
+the same `M:SS` formatting — defining it once here and importing it there avoids
+three copies of the same private function.
+
 **Interfaces:**
 - Consumes: `MurphSession` (Task 2).
 - Produces:
+  - `func formatDuration(_ seconds: Double) -> String` (top-level, file-private to no one — used directly by name from any file in the target).
   - `enum HistoryStats { struct Summary { personalBestSeconds, mostRecentSeconds, trendSeconds: Double? }; static func summarize(completedSessions: [MurphSession]) -> Summary }`
   - `struct HistoryListView: View { let onSelect: (MurphSession) -> Void }`
 
@@ -1515,7 +1523,19 @@ final class HistoryStatsTests: XCTestCase {
 Run: `xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
 Expected: `cannot find 'HistoryStats' in scope`
 
-- [ ] **Step 3: Implement `HistoryStats`**
+- [ ] **Step 3: Implement the shared duration formatter**
+
+```swift
+// MurphPlus/Support/DurationFormatting.swift
+import Foundation
+
+func formatDuration(_ seconds: Double) -> String {
+    let total = Int(max(0, seconds))
+    return String(format: "%d:%02d", total / 60, total % 60)
+}
+```
+
+- [ ] **Step 4: Implement `HistoryStats`**
 
 ```swift
 // MurphPlus/Prediction/HistoryStats.swift
@@ -1549,7 +1569,7 @@ enum HistoryStats {
 }
 ```
 
-- [ ] **Step 4: Implement `HistoryListView`**
+- [ ] **Step 5: Implement `HistoryListView`**
 
 ```swift
 // MurphPlus/Views/History/HistoryListView.swift
@@ -1618,23 +1638,18 @@ struct HistoryListView: View {
             }
         }
     }
-
-    private func formatDuration(_ seconds: Double) -> String {
-        let total = Int(seconds)
-        return String(format: "%d:%02d", total / 60, total % 60)
-    }
 }
 ```
 
-- [ ] **Step 5: Regenerate and run tests**
+- [ ] **Step 6: Regenerate and run tests**
 
 Run: `xcodegen generate && xcodebuild test -scheme MurphPlus -destination 'platform=iOS Simulator,name=iPhone 16' -project MurphPlus.xcodeproj`
 Expected: `** TEST SUCCEEDED **`
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add MurphPlus/Prediction/HistoryStats.swift MurphPlus/Views/History/HistoryListView.swift MurphPlusTests/HistoryStatsTests.swift
+git add MurphPlus/Support/DurationFormatting.swift MurphPlus/Prediction/HistoryStats.swift MurphPlus/Views/History/HistoryListView.swift MurphPlusTests/HistoryStatsTests.swift
 git commit -m "feat: add history list view with stats header"
 ```
 
@@ -1648,7 +1663,7 @@ git commit -m "feat: add history list view with stats header"
 - Test: `MurphPlusTests/RoundThroughputBuilderTests.swift`
 
 **Interfaces:**
-- Consumes: `MurphSession`, `RunSplit`, `RoundLog`, `WorkoutTemplate` (Task 2), `RoundThroughput` (Task 4).
+- Consumes: `MurphSession`, `RunSplit`, `RoundLog`, `WorkoutTemplate` (Task 2), `RoundThroughput` (Task 4), `formatDuration(_ seconds: Double) -> String` (Task 9 — use it directly, do not redefine a local copy).
 - Produces:
   - `enum RoundThroughputBuilder { static func build(session: MurphSession) -> [RoundThroughput] }`
   - `struct SessionDetailView: View { @Bindable var session: MurphSession }` — later tasks (11) append content to its `Form`.
@@ -1802,11 +1817,6 @@ struct SessionDetailView: View {
             Button("Cancel", role: .cancel) {}
         }
     }
-
-    private func formatDuration(_ seconds: Double) -> String {
-        let total = Int(seconds)
-        return String(format: "%d:%02d", total / 60, total % 60)
-    }
 }
 ```
 
@@ -1831,7 +1841,7 @@ git commit -m "feat: add session detail view with per-round pace"
 - Modify: `MurphPlus/Views/History/SessionDetailView.swift`
 
 **Interfaces:**
-- Consumes: `FatiguePrediction` (Task 4), `RoundThroughputBuilder` (Task 10), `WorkoutTemplate`, `MurphSession` (Task 2).
+- Consumes: `FatiguePrediction` (Task 4), `RoundThroughputBuilder` (Task 10), `WorkoutTemplate`, `MurphSession` (Task 2), `formatDuration(_ seconds: Double) -> String` (Task 9 — use it directly, do not redefine a local copy).
 - Produces: `struct PredictionControlView: View { let session: MurphSession }` — a `Section` embedded directly into `SessionDetailView`'s `Form`.
 
 - [ ] **Step 1: Implement `PredictionControlView`**
@@ -1914,11 +1924,6 @@ struct PredictionControlView: View {
                     .foregroundStyle(.secondary)
             }
         }
-    }
-
-    private func formatDuration(_ seconds: Double) -> String {
-        let total = Int(max(0, seconds))
-        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }
 ```
@@ -2491,7 +2496,7 @@ picked up later without touching any other code.
 
 **Files:**
 - Modify: `project.yml`
-- Modify: `MurphPlus/MurphPlusApp.swift`
+- Create: `MurphPlus/MurphPlus.entitlements` (via `xcodegen generate`, from the `entitlements:` block added to `project.yml`)
 
 **Interfaces:**
 - Consumes: all models (Task 2). No new types produced.
