@@ -93,6 +93,11 @@ murph-plus/
 Run: `xcodegen --version`
 Expected: a version string. If the command isn't found, run: `brew install xcodegen`
 
+CloudKit entitlements are deliberately **not** configured here — they require a
+paid Apple Developer account and a provisioned iCloud container, which would
+block every build in this plan from Task 1 onward. Local SwiftData persistence
+works without them; CloudKit sync is switched on at the end, in Task 15.
+
 - [ ] **Step 2: Write `project.yml`**
 
 ```yaml
@@ -117,13 +122,6 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: true
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_CFBundleDisplayName: "Murph Plus"
-    entitlements:
-      path: MurphPlus/MurphPlus.entitlements
-      properties:
-        com.apple.developer.icloud-container-identifiers:
-          - iCloud.com.projectnemeth.MurphPlus
-        com.apple.developer.icloud-services:
-          - CloudKit
   MurphPlusTests:
     type: bundle.unit-test
     platform: iOS
@@ -207,9 +205,12 @@ final class SmokeTests: XCTestCase {
 Run: `xcodegen generate`
 Expected: `Generated project at MurphPlus.xcodeproj`
 
-- [ ] **Step 8: One-time manual step — set signing team**
+- [ ] **Step 8: (Deferred) signing team**
 
-Open `MurphPlus.xcodeproj` in Xcode once, select the `MurphPlus` target → Signing & Capabilities → choose your Apple ID/Team. This is environment-specific (tied to your Apple Developer account) and isn't scripted.
+No action needed now. Simulator builds and tests — everything this plan runs — do
+not require a signing team. Setting one is only necessary to install on a
+physical device or ship to TestFlight; it's covered in Task 15, alongside
+CloudKit. Skip this step and continue.
 
 - [ ] **Step 9: Run the test suite from the command line**
 
@@ -354,18 +355,24 @@ enum SessionPhase: String, Codable {
 
 - [ ] **Step 4: Write `WorkoutTemplate`**
 
+Every stored property carries a default value. This is not stylistic: SwiftData's
+CloudKit backing (added in Task 15) requires all attributes to be optional or
+defaulted, and it validates the whole schema at container creation — a
+non-defaulted property fails at launch, not at compile time. Building the models
+this way now avoids a migration later.
+
 ```swift
 // MurphPlus/Models/WorkoutTemplate.swift
 import SwiftData
 
 @Model
 final class WorkoutTemplate {
-    var name: String
-    var runDistanceMiles: Double
-    var totalPullUps: Int
-    var totalPushUps: Int
-    var totalSquats: Int
-    var rounds: Int
+    var name: String = ""
+    var runDistanceMiles: Double = 1.0
+    var totalPullUps: Int = 100
+    var totalPushUps: Int = 200
+    var totalSquats: Int = 300
+    var rounds: Int = 1
 
     init(
         name: String,
@@ -383,11 +390,15 @@ final class WorkoutTemplate {
         self.rounds = rounds
     }
 
+    // `max(rounds, 1)` guards against integer division by zero, which would be a
+    // hard crash rather than a recoverable error if a stored value ever hits 0.
+    private var safeRounds: Int { max(rounds, 1) }
+
     var totalReps: Int { totalPullUps + totalPushUps + totalSquats }
-    var pullUpsPerRound: Int { totalPullUps / rounds }
-    var pushUpsPerRound: Int { totalPushUps / rounds }
-    var squatsPerRound: Int { totalSquats / rounds }
-    var repsPerRound: Int { totalReps / rounds }
+    var pullUpsPerRound: Int { totalPullUps / safeRounds }
+    var pushUpsPerRound: Int { totalPushUps / safeRounds }
+    var squatsPerRound: Int { totalSquats / safeRounds }
+    var repsPerRound: Int { totalReps / safeRounds }
 }
 ```
 
@@ -400,17 +411,17 @@ import SwiftData
 
 @Model
 final class MurphSession {
-    var date: Date
+    var date: Date = Date.distantPast
     var template: WorkoutTemplate?
-    var vestOn: Bool
+    var vestOn: Bool = false
     var vestWeightLbs: Int?
-    var statusRaw: String
-    var phaseRaw: String
+    var statusRaw: String = SessionStatus.inProgress.rawValue
+    var phaseRaw: String = SessionPhase.notStarted.rawValue
     var notes: String?
     var startedAt: Date?
     var currentPhaseStartedAt: Date?
     var completedAt: Date?
-    var completedRounds: Int
+    var completedRounds: Int = 0
 
     @Relationship(deleteRule: .cascade, inverse: \RunSplit.session)
     var runSplits: [RunSplit] = []
@@ -459,9 +470,9 @@ import SwiftData
 
 @Model
 final class RunSplit {
-    var runIndex: Int
-    var startTime: Date
-    var durationSeconds: Double
+    var runIndex: Int = 1
+    var startTime: Date = Date.distantPast
+    var durationSeconds: Double = 0
     var session: MurphSession?
 
     init(runIndex: Int, startTime: Date, durationSeconds: Double, session: MurphSession? = nil) {
@@ -482,8 +493,8 @@ import SwiftData
 
 @Model
 final class RoundLog {
-    var roundNumber: Int
-    var completedAt: Date
+    var roundNumber: Int = 0
+    var completedAt: Date = Date.distantPast
     var session: MurphSession?
 
     init(roundNumber: Int, completedAt: Date, session: MurphSession? = nil) {
@@ -506,7 +517,14 @@ struct MurphPlusApp: App {
     let container: ModelContainer
 
     init() {
-        container = try! ModelContainer(for: WorkoutTemplate.self, MurphSession.self, RunSplit.self, RoundLog.self)
+        do {
+            container = try ModelContainer(for: WorkoutTemplate.self, MurphSession.self, RunSplit.self, RoundLog.self)
+        } catch {
+            // Container creation fails on schema problems (a non-defaulted
+            // property under CloudKit, a bad migration). Surface the reason
+            // rather than crashing opaquely on `try!`.
+            fatalError("Failed to create ModelContainer: \(error)")
+        }
     }
 
     var body: some Scene {
@@ -617,7 +635,14 @@ struct MurphPlusApp: App {
     let container: ModelContainer
 
     init() {
-        container = try! ModelContainer(for: WorkoutTemplate.self, MurphSession.self, RunSplit.self, RoundLog.self)
+        do {
+            container = try ModelContainer(for: WorkoutTemplate.self, MurphSession.self, RunSplit.self, RoundLog.self)
+        } catch {
+            // Container creation fails on schema problems (a non-defaulted
+            // property under CloudKit, a bad migration). Surface the reason
+            // rather than crashing opaquely on `try!`.
+            fatalError("Failed to create ModelContainer: \(error)")
+        }
         try? DefaultTemplates.seedIfNeeded(context: container.mainContext)
     }
 
@@ -681,6 +706,11 @@ final class FatiguePredictionTests: XCTestCase {
         XCTAssertNil(FatiguePrediction.fitFatigueCurve(rounds: rounds))
     }
 
+    // Fixture note: intercept 1.0 / slope 0.02 at 10 reps/round is chosen
+    // deliberately so every round's duration lands on a whole second
+    // (11, 13, 15, 17, 19, 21). Rounding to Int would otherwise bias the fit —
+    // a 0.01 slope yields x.5-second rounds and shifts the recovered intercept
+    // by exactly 0.05, which is enough to fail a tolerance-based assertion.
     func test_fitFatigueCurve_recoversKnownLinearRelationship() {
         let repsPerRound = 10
         var rounds: [RoundThroughput] = []
@@ -688,15 +718,15 @@ final class FatiguePredictionTests: XCTestCase {
         for _ in 0..<6 {
             cumulative += repsPerRound
             let midpoint = Double(cumulative) - Double(repsPerRound) / 2.0
-            let secPerRep = 1.0 + 0.01 * midpoint
+            let secPerRep = 1.0 + 0.02 * midpoint
             let secondsForRound = Int((secPerRep * Double(repsPerRound)).rounded())
             rounds.append(RoundThroughput(cumulativeRepsAfter: cumulative, secondsForRound: secondsForRound, repsInRound: repsPerRound))
         }
 
         let fit = FatiguePrediction.fitFatigueCurve(rounds: rounds)
         XCTAssertNotNil(fit)
-        XCTAssertEqual(fit!.intercept, 1.0, accuracy: 0.05)
-        XCTAssertEqual(fit!.slope, 0.01, accuracy: 0.005)
+        XCTAssertEqual(fit!.intercept, 1.0, accuracy: 0.0001)
+        XCTAssertEqual(fit!.slope, 0.02, accuracy: 0.0001)
     }
 
     func test_predictWorkTime_withZeroSlope_matchesFlatMultiplication() {
@@ -1272,6 +1302,7 @@ git commit -m "feat: add live session tracking view"
 **Files:**
 - Create: `MurphPlus/Persistence/ResumableSessionFinder.swift`
 - Create: `MurphPlus/Views/Session/ResumeSessionPrompt.swift`
+- Test: `MurphPlusTests/ResumableSessionFinderTests.swift`
 
 **Interfaces:**
 - Consumes: `MurphSession`, `SessionStatus` (Task 2).
@@ -1299,12 +1330,27 @@ final class ResumableSessionFinderTests: XCTestCase {
         completed.status = .completed
         context.insert(completed)
         let inProgress = MurphSession(template: template, vestOn: false)
+        inProgress.startedAt = .now
         context.insert(inProgress)
         try context.save()
 
         let found = ResumableSessionFinder.findInProgress(context: context)
 
         XCTAssertEqual(found?.persistentModelID, inProgress.persistentModelID)
+    }
+
+    func test_findInProgress_ignoresSessionThatWasNeverStarted() throws {
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: WorkoutTemplate.self, MurphSession.self, RunSplit.self, RoundLog.self, configurations: config)
+        let context = ModelContext(container)
+
+        let template = WorkoutTemplate(name: "Test")
+        context.insert(template)
+        let neverStarted = MurphSession(template: template, vestOn: false)
+        context.insert(neverStarted)
+        try context.save()
+
+        XCTAssertNil(ResumableSessionFinder.findInProgress(context: context))
     }
 
     func test_findInProgress_returnsNilWhenNoneInProgress() throws {
@@ -1337,10 +1383,17 @@ import SwiftData
 
 enum ResumableSessionFinder {
     static func findInProgress(context: ModelContext) -> MurphSession? {
+        // Captured in a local so the predicate tracks the enum rather than a
+        // hardcoded string that would silently stop matching if a case is renamed.
+        let inProgressRaw = SessionStatus.inProgress.rawValue
         let descriptor = FetchDescriptor<MurphSession>(
-            predicate: #Predicate { $0.statusRaw == "inProgress" }
+            predicate: #Predicate { $0.statusRaw == inProgressRaw },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
         )
-        return (try? context.fetch(descriptor))?.first
+        // `startedAt != nil` excludes sessions that were created at the setup
+        // screen but never started — prompting to "resume" one of those would
+        // be confusing, since there is nothing to resume.
+        return (try? context.fetch(descriptor))?.first { $0.startedAt != nil }
     }
 }
 ```
@@ -1410,6 +1463,10 @@ final class HistoryStatsTests: XCTestCase {
         let template = WorkoutTemplate(name: "Test")
         let session = MurphSession(template: template, vestOn: false)
         let start = Date.now.addingTimeInterval(Double(-daysAgo) * 86400)
+        // `summarize` sorts on `session.date`, so the fixture must set it —
+        // setting only startedAt/completedAt leaves every fixture at the same
+        // default date and makes the ordering assertions meaningless.
+        session.date = start
         session.startedAt = start
         session.completedAt = start.addingTimeInterval(elapsedSeconds)
         session.status = .completed
@@ -1827,6 +1884,16 @@ struct PredictionControlView: View {
     }
 
     var body: some View {
+        // Per the spec, the control is absent — not merely disabled — until this
+        // session has the run data a prediction is derived from. An abandoned or
+        // partial session simply shows no prediction UI at all.
+        if pace != nil {
+            predictionSection
+        }
+    }
+
+    @ViewBuilder
+    private var predictionSection: some View {
         Section("Predict Another Distance") {
             Picker("Target", selection: $targetTemplate) {
                 Text("Choose a template").tag(WorkoutTemplate?.none)
@@ -1835,10 +1902,7 @@ struct PredictionControlView: View {
                 }
             }
 
-            if pace == nil {
-                Text("This session is missing run data, so a prediction isn't available.")
-                    .foregroundStyle(.secondary)
-            } else if let result {
+            if let result {
                 LabeledContent("Predicted Time", value: formatDuration(result.totalSeconds))
                 Text(result.usedFatigueCurve
                      ? "Based on this session's fatigue curve."
@@ -2187,7 +2251,14 @@ struct MurphPlusApp: App {
     let container: ModelContainer
 
     init() {
-        container = try! ModelContainer(for: WorkoutTemplate.self, MurphSession.self, RunSplit.self, RoundLog.self)
+        do {
+            container = try ModelContainer(for: WorkoutTemplate.self, MurphSession.self, RunSplit.self, RoundLog.self)
+        } catch {
+            // Container creation fails on schema problems (a non-defaulted
+            // property under CloudKit, a bad migration). Surface the reason
+            // rather than crashing opaquely on `try!`.
+            fatalError("Failed to create ModelContainer: \(error)")
+        }
         try? DefaultTemplates.seedIfNeeded(context: container.mainContext)
     }
 
@@ -2403,4 +2474,80 @@ Run the app, go to Start → "New Template…", enter a name (e.g. "Half Murph")
 ```bash
 git add MurphPlus/Views/Start/TemplateEditorView.swift MurphPlus/Views/Start/StartView.swift
 git commit -m "feat: add custom template editor for scaled Murph variants"
+```
+
+---
+
+### Task 15: Enable CloudKit Sync & Device Signing
+
+Deferred to last on purpose: CloudKit entitlements require a paid Apple Developer
+account and a provisioned iCloud container, and turning them on earlier would
+have blocked every simulator build in this plan. Everything above works against
+local-only SwiftData; this task switches on cross-device sync.
+
+**Prerequisite:** a paid Apple Developer Program membership. If you don't have
+one yet, stop here — the app is fully functional local-only, and this task can be
+picked up later without touching any other code.
+
+**Files:**
+- Modify: `project.yml`
+- Modify: `MurphPlus/MurphPlusApp.swift`
+
+**Interfaces:**
+- Consumes: all models (Task 2). No new types produced.
+
+- [ ] **Step 1: Verify every model property is CloudKit-compatible**
+
+CloudKit requires all attributes to be optional or have default values, and all
+relationships to be optional. Re-read the four files in `MurphPlus/Models/` and
+confirm: every `var` has either a `?` or an `= default`, and both `@Relationship`
+arrays are defaulted to `[]`. This was built in during Task 2 — this step is a
+verification, not a change. If anything is missing a default, add one now.
+
+- [ ] **Step 2: Add the CloudKit entitlement to `project.yml`**
+
+Insert this block into the `MurphPlus` target, as a sibling of `settings:`:
+
+```yaml
+    entitlements:
+      path: MurphPlus/MurphPlus.entitlements
+      properties:
+        com.apple.developer.icloud-container-identifiers:
+          - iCloud.com.projectnemeth.MurphPlus
+        com.apple.developer.icloud-services:
+          - CloudKit
+```
+
+- [ ] **Step 3: Regenerate and set the signing team**
+
+Run: `xcodegen generate`
+
+Then open `MurphPlus.xcodeproj` in Xcode → `MurphPlus` target → Signing &
+Capabilities → select your Team, and confirm the iCloud capability shows the
+`iCloud.com.projectnemeth.MurphPlus` container (create it there if it doesn't
+exist yet). This is account-specific and can't be scripted.
+
+- [ ] **Step 4: Confirm the container picks up CloudKit**
+
+No code change is required — `ModelContainer` automatically enables CloudKit
+sync when the entitlement is present. Build and run on a device:
+
+Run: `xcodebuild build -scheme MurphPlus -destination 'generic/platform=iOS' -project MurphPlus.xcodeproj`
+Expected: `** BUILD SUCCEEDED **`
+
+If the container now fails to initialize, the `fatalError` added in Task 2 prints
+the schema violation — fix the offending property's default and rebuild.
+
+- [ ] **Step 5: Verify sync across two devices**
+
+Install on two devices signed into the same iCloud account. Complete a short
+session on one, then confirm it appears in History on the other (allow up to a
+minute; CloudKit sync is not instant). If nothing syncs, check that both devices
+have iCloud Drive enabled and are on the same Apple ID.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add project.yml MurphPlus/MurphPlus.entitlements
+git commit -m "feat: enable CloudKit sync for cross-device workout history"
 ```
