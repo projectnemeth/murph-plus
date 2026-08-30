@@ -17,9 +17,15 @@ TestFlight. Not a public App Store release (for now).
 **Scope for this version (v1):** in-workout live tracker + workout
 history/log, including a calendar view and calculation-based finish-time
 prediction. Explicitly deferred:
-- **v2:** structured training plans ("trainer" — build toward a full Murph)
-- **v3 (roadmap, contingent on v1/v2 traction):** social features /
+- **v2:** Apple Watch companion app (wrist-based round/run tracking, heart
+  rate, HealthKit workout session)
+- **v3:** structured training plans ("trainer" — build toward a full Murph)
+- **v4 (roadmap, contingent on earlier traction):** social features /
   leaderboards comparing times across friends/gym
+
+See "Deferred to Later Versions" at the end of this document for the
+reasoning behind the Watch app's placement and the architectural work it
+implies.
 
 ## Tech Stack & Architecture
 
@@ -28,7 +34,7 @@ prediction. Explicitly deferred:
 - **Persistence:** SwiftData, using its built-in CloudKit integration for
   sync across the user's own devices. No shared backend — each person's
   data is private to their own iCloud account; there is no cross-user data
-  sharing in v1 (that's what v3's social layer would add later).
+  sharing in v1 (that's what the v4 social layer would add later).
 - **Pattern:** MVVM.
 
 This was chosen over Core Data (more mature CloudKit sync, but more
@@ -195,7 +201,35 @@ Tab bar with three tabs:
 
 ## Deferred to Later Versions
 
-- **v2:** structured training plans building toward a full Murph.
-- **v3 (roadmap):** social features / leaderboards comparing times across
+- **v2: Apple Watch companion app.** Promoted ahead of training plans
+  because it fixes the weakest part of v1's core interaction: Murph is
+  performed with hands on a pull-up bar and on the floor, so tapping
+  "round done" twenty times on a phone is the wrong ergonomics. A wrist
+  tap is the right one. Intended scope:
+  - Round-completion tapping and run start/stop from the wrist — the
+    Watch becomes the primary in-workout input; the phone becomes the
+    review-and-history surface.
+  - Always-on elapsed time on the watch face during a session.
+  - Heart rate capture per round and per run (Watch-only data the phone
+    cannot collect), which would also give the fatigue-curve prediction
+    a physiological signal to sit alongside its pace signal.
+  - Workout session registration via HealthKit (`HKWorkoutSession`) so
+    the workout is not interrupted by the screen sleeping and lands in
+    the user's Activity rings.
+
+  **Known architectural work this implies:** SwiftData's CloudKit sync
+  is not a viable phone↔watch transport for live, in-progress session
+  state — it is eventually-consistent and far too slow for a workout in
+  progress. A live session driven from the Watch needs `WatchConnectivity`
+  for real-time transfer, with CloudKit continuing to handle completed
+  history. This is the main design question to resolve when v2 is
+  brainstormed, and it may mean revisiting where `SessionEngine` owns
+  session state.
+
+- **v3:** structured training plans building toward a full Murph.
+- **v4 (roadmap):** social features / leaderboards comparing times across
   friends and gym community.
 - Possible v1.1+: GPS-tracked runs (route/pace via Core Location + MapKit).
+  Note this overlaps with the Watch work — GPS on the Watch is the more
+  natural home for it, so it may be folded into v2 rather than shipped
+  separately on the phone.
