@@ -27,6 +27,14 @@ targets:
       - MurphPlusTests
     dependencies:
       - target: MurphPlus
+    settings:
+      base:
+        # Required: without it the test bundle fails to code sign with
+        # "target does not have an Info.plist file and one is not being
+        # generated automatically". The app target is not enough — the test
+        # bundle needs its own.
+        GENERATE_INFOPLIST_FILE: true
+        SWIFT_VERSION: "5.0"
 schemes:
   MurphPlus:
     build:
