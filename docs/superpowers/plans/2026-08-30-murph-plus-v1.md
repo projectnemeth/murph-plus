@@ -1814,12 +1814,22 @@ final class RoundThroughputBuilderTests: XCTestCase {
         session.runSplits.append(run1)
 
         let roundsStart = run1Start.addingTimeInterval(480)
-        let round1 = RoundLog(roundNumber: 1, completedAt: roundsStart.addingTimeInterval(20), session: session)
+        // Constructed newest-first (each initializer's `session:` argument links
+        // the inverse relationship immediately, so construction order, not any
+        // later manual array mutation, is what determines session.roundLogs order).
+        //
+        // This ordering detail is load-bearing: an earlier draft of this test
+        // appended [round2, round1] manually AFTER constructing them in ascending
+        // order, which did nothing — SwiftData had already synced the inverse at
+        // construction time — and the test passed even with the sort removed.
+        // Verified non-vacuous: with `.sorted` deleted, this test fails with
+        // ("45") is not equal to ("20") and ("-25") is not equal to ("25").
+        // Note the negative: walking unsorted logs yields negative durations that
+        // would feed straight into the fatigue regression.
         let round2 = RoundLog(roundNumber: 2, completedAt: roundsStart.addingTimeInterval(45), session: session)
-        context.insert(round1)
+        let round1 = RoundLog(roundNumber: 1, completedAt: roundsStart.addingTimeInterval(20), session: session)
         context.insert(round2)
-        // Deliberately appended newest-first.
-        session.roundLogs.append(contentsOf: [round2, round1])
+        context.insert(round1)
 
         let throughputs = RoundThroughputBuilder.build(session: session)
 
