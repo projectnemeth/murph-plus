@@ -7,6 +7,7 @@ struct StartView: View {
     @State private var selectedTemplate: WorkoutTemplate?
     @State private var vestOn = false
     @State private var vestWeightText = ""
+    @State private var showTemplateEditor = false
 
     let onBegin: (WorkoutTemplate, Bool, Int?) -> Void
 
@@ -18,6 +19,9 @@ struct StartView: View {
                         ForEach(templates) { template in
                             Text(template.name).tag(Optional(template))
                         }
+                    }
+                    Button("New Template…") {
+                        showTemplateEditor = true
                     }
                 }
 
@@ -43,6 +47,9 @@ struct StartView: View {
                 if selectedTemplate == nil {
                     selectedTemplate = templates.first
                 }
+            }
+            .sheet(isPresented: $showTemplateEditor) {
+                TemplateEditorView()
             }
         }
     }
