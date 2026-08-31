@@ -3,8 +3,17 @@ import SwiftUI
 import SwiftData
 
 struct HistoryListView: View {
-    @Query(sort: \MurphSession.date, order: .reverse) private var sessions: [MurphSession]
+    @Query(sort: \MurphSession.date, order: .reverse) private var allSessions: [MurphSession]
     let onSelect: (MurphSession) -> Void
+
+    // History shows PAST sessions: completed and abandoned only. An .inProgress
+    // row can outlive its workout — if the app is killed between "Begin" and
+    // "Start Run 1", the session has startedAt == nil, so ResumableSessionFinder
+    // deliberately refuses to offer it for resume, and it would otherwise linger
+    // in the store forever, rendering here as a stray row showing "—".
+    private var sessions: [MurphSession] {
+        allSessions.filter { $0.status != .inProgress }
+    }
 
     private var summary: HistoryStats.Summary {
         HistoryStats.summarize(completedSessions: sessions.filter { $0.status == .completed })
