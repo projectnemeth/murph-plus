@@ -1015,6 +1015,54 @@ final class SessionEngineTests: XCTestCase {
         XCTAssertEqual(engine.session.status, .abandoned)
         XCTAssertNotNil(engine.session.completedAt)
     }
+
+    // An abandoned session is terminal. Without a status guard, `abandon()`
+    // leaves `phase` untouched, so a phase-only guard would let completeRound()
+    // and then finishRun() run afterwards and flip the session back to
+    // .completed — silently erasing the user's abandonment.
+    func test_abandonedSession_cannotBeResurrectedByFurtherTransitions() {
+        let template = makeTemplate(rounds: 1)
+        let engine = SessionEngine.startNew(template: template, vestOn: false, vestWeightLbs: nil, context: context)
+        engine.start()
+        engine.finishRun()
+        engine.abandon()
+
+        engine.completeRound()
+        engine.finishRun()
+
+        XCTAssertEqual(engine.session.status, .abandoned)
+        XCTAssertEqual(engine.session.roundLogs.count, 0)
+    }
+
+    func test_completedSession_cannotBeAbandoned() {
+        let template = makeTemplate(rounds: 1)
+        let engine = SessionEngine.startNew(template: template, vestOn: false, vestWeightLbs: nil, context: context)
+        engine.start()
+        engine.finishRun()
+        engine.completeRound()
+        engine.finishRun()
+        let completedAt = engine.session.completedAt
+
+        engine.abandon()
+
+        XCTAssertEqual(engine.session.status, .completed)
+        XCTAssertEqual(engine.session.completedAt, completedAt)
+    }
+
+    func test_invalidPhaseTransitionsAreIgnored() {
+        let template = makeTemplate(rounds: 2)
+        let engine = SessionEngine.startNew(template: template, vestOn: false, vestWeightLbs: nil, context: context)
+
+        engine.completeRound()
+        XCTAssertEqual(engine.session.completedRounds, 0)
+
+        engine.start()
+        engine.start()
+        XCTAssertEqual(engine.session.phase, .run1)
+
+        engine.completeRound()
+        XCTAssertEqual(engine.session.completedRounds, 0)
+    }
 }
 ```
 
@@ -1048,7 +1096,17 @@ final class SessionEngine {
         return SessionEngine(session: session, context: context)
     }
 
+    /// A completed or abandoned session is terminal: no further transition may
+    /// mutate it. Guarding on phase alone is not enough, because `abandon()`
+    /// changes only `status` — leaving `phase` wherever it was, which would let
+    /// `completeRound()`/`finishRun()` run afterwards and silently flip an
+    /// abandoned session back to `.completed`, destroying the record.
+    private var isTerminal: Bool {
+        session.status == .completed || session.status == .abandoned
+    }
+
     func start() {
+        guard !isTerminal else { return }
         guard session.phase == .notStarted else { return }
         let now = Date.now
         session.startedAt = now
@@ -1058,6 +1116,7 @@ final class SessionEngine {
     }
 
     func finishRun() {
+        guard !isTerminal else { return }
         guard session.phase == .run1 || session.phase == .run2,
               let start = session.currentPhaseStartedAt else { return }
 
@@ -1080,6 +1139,7 @@ final class SessionEngine {
     }
 
     func completeRound() {
+        guard !isTerminal else { return }
         guard session.phase == .rounds, let template = session.template else { return }
 
         let nextRoundNumber = session.completedRounds + 1
@@ -1096,6 +1156,7 @@ final class SessionEngine {
     }
 
     func abandon() {
+        guard !isTerminal else { return }
         session.status = .abandoned
         session.completedAt = .now
         session.currentPhaseStartedAt = nil
