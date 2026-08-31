@@ -83,7 +83,16 @@ enum FatiguePrediction {
         let predictedRun1 = predictRunTime(targetDistanceMiles: targetRunDistanceMiles, secondsPerMile: pace.run1SecondsPerMile)
         let predictedRun2 = predictRunTime(targetDistanceMiles: targetRunDistanceMiles, secondsPerMile: pace.run2SecondsPerMile)
 
-        if let fit = fitFatigueCurve(rounds: sourceRoundThroughputs) {
+        // A least-squares fit over rounds that got FASTER (a slow start, then
+        // settling) yields a negative slope. Extrapolated to a larger rep count it
+        // drives the predicted rate below zero, producing a work time that is far
+        // too low or outright negative — which formatDuration's max(0,·) then
+        // launders into a plausible-looking number. Only trust the curve where it
+        // still predicts a positive rate at the target volume; otherwise fall
+        // through to the flat-rate estimate, which reports usedFatigueCurve: false
+        // and is captioned honestly in the UI.
+        if let fit = fitFatigueCurve(rounds: sourceRoundThroughputs),
+           fit.intercept + fit.slope * Double(targetTotalReps) > 0 {
             let work = predictWorkTime(targetReps: targetTotalReps, fit: fit)
             return PredictionResult(predictedRun1Seconds: predictedRun1, predictedWorkSeconds: work, predictedRun2Seconds: predictedRun2, usedFatigueCurve: true)
         } else if let flat = predictWorkTimeFlatRate(targetReps: targetTotalReps, sourceWorkSeconds: sourceWorkSeconds, sourceTotalReps: sourceTotalReps) {

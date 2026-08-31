@@ -88,4 +88,34 @@ final class FatiguePredictionTests: XCTestCase {
         XCTAssertFalse(result!.usedFatigueCurve)
         XCTAssertEqual(result!.predictedWorkSeconds, 250.0, accuracy: 0.001)
     }
+
+    // A session whose rounds got FASTER fits a negative slope. Extrapolated far
+    // enough it predicts a negative rate, so `predict` must reject the curve and
+    // fall back to the flat rate rather than reporting an impossible time.
+    func test_predict_fallsBackWhenFitPredictsNegativeRateAtTarget() {
+        let repsPerRound = 30
+        let secondsPerRound = [95, 90, 85, 45, 44, 43, 43, 42, 42, 41]
+        var rounds: [RoundThroughput] = []
+        var cumulative = 0
+        for seconds in secondsPerRound {
+            cumulative += repsPerRound
+            rounds.append(RoundThroughput(cumulativeRepsAfter: cumulative, secondsForRound: seconds, repsInRound: repsPerRound))
+        }
+        let pace = FatiguePrediction.RunPace(run1SecondsPerMile: 480, run2SecondsPerMile: 540)
+        let sourceWorkSeconds = Double(secondsPerRound.reduce(0, +))
+
+        let result = FatiguePrediction.predict(
+            targetRunDistanceMiles: 1.0,
+            targetTotalReps: 600,
+            sourceRoundThroughputs: rounds,
+            sourceWorkSeconds: sourceWorkSeconds,
+            sourceTotalReps: 300,
+            pace: pace
+        )
+
+        XCTAssertNotNil(result)
+        XCTAssertFalse(result!.usedFatigueCurve, "curve predicts a negative rate at 600 reps; must fall back")
+        XCTAssertEqual(result!.predictedWorkSeconds, sourceWorkSeconds / 300.0 * 600.0, accuracy: 0.001)
+        XCTAssertGreaterThan(result!.predictedWorkSeconds, 0)
+    }
 }

@@ -1,5 +1,6 @@
 // MurphPlus/Views/Session/LiveSessionView.swift
 import SwiftUI
+import UIKit
 
 struct LiveSessionView: View {
     let engine: SessionEngine
@@ -28,6 +29,8 @@ struct LiveSessionView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
+        .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
+        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
     }
 
     @ViewBuilder

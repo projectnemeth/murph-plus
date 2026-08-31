@@ -26,6 +26,13 @@ final class WorkoutTemplate {
         self.rounds = rounds
     }
 
+    // CloudKit requires every relationship to have an inverse. Without this,
+    // enabling CloudKit (Task 15) risks failing schema validation at launch.
+    // .nullify rather than .cascade: deleting a template must NOT delete the
+    // sessions performed with it — the workout history is the record.
+    @Relationship(deleteRule: .nullify, inverse: \MurphSession.template)
+    var sessions: [MurphSession] = []
+
     // `max(rounds, 1)` guards against integer division by zero, which would be a
     // hard crash rather than a recoverable error if a stored value ever hits 0.
     private var safeRounds: Int { max(rounds, 1) }

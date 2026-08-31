@@ -75,4 +75,22 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(session.runSplits.count, 1)
         XCTAssertEqual(session.roundLogs.count, 1)
     }
+
+    func test_deletingSession_cascadesToSplitsAndRoundLogs() throws {
+        let template = WorkoutTemplate(name: "Test", rounds: 2)
+        context.insert(template)
+        let session = MurphSession(template: template, vestOn: false)
+        context.insert(session)
+        let split = RunSplit(runIndex: 1, startTime: .now, durationSeconds: 480, session: session)
+        context.insert(split)
+        let round = RoundLog(roundNumber: 1, completedAt: .now, session: session)
+        context.insert(round)
+        try context.save()
+
+        context.delete(session)
+        try context.save()
+
+        XCTAssertTrue(try context.fetch(FetchDescriptor<RunSplit>()).isEmpty)
+        XCTAssertTrue(try context.fetch(FetchDescriptor<RoundLog>()).isEmpty)
+    }
 }

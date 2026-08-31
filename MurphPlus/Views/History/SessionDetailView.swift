@@ -60,9 +60,17 @@ struct SessionDetailView: View {
         .navigationTitle(session.date.formatted(date: .abbreviated, time: .omitted))
         .confirmationDialog("Delete this session?", isPresented: $showDeleteConfirm) {
             Button("Delete", role: .destructive) {
-                context.delete(session)
-                try? context.save()
+                // Dismiss before deleting: this view is @Bindable on `session` and the
+                // parent still holds it in navigationDestination(item:), so deleting
+                // first can leave a body evaluation reading a deleted model.
                 dismiss()
+                context.delete(session)
+                do {
+                    try context.save()
+                } catch {
+                    // A destructive action must not silently report success.
+                    assertionFailure("Failed to delete session: \(error)")
+                }
             }
             Button("Cancel", role: .cancel) {}
         }

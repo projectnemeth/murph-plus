@@ -64,6 +64,11 @@ struct HistoryListView: View {
                 Text(session.date.formatted(date: .abbreviated, time: .omitted))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if session.vestOn {
+                    Text("\(session.vestWeightLbs ?? 20) lb vest")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
             if session.status == .abandoned {

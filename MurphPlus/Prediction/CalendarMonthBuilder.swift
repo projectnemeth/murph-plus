@@ -2,7 +2,10 @@
 import Foundation
 
 struct CalendarDay: Identifiable {
-    let id = UUID()
+    // Identity must be stable across body evaluations: `days` is computed, so a
+    // fresh UUID per build would make ForEach tear down and rebuild all 42 cells
+    // on every render. `date` is already startOfDay-normalised and unique per cell.
+    var id: Date { date }
     let date: Date
     let isInCurrentMonth: Bool
     let session: MurphSession?
