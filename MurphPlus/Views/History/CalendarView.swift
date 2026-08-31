@@ -3,12 +3,22 @@ import SwiftUI
 import SwiftData
 
 struct CalendarView: View {
-    @Query private var sessions: [MurphSession]
+    @Query private var allSessions: [MurphSession]
     @State private var displayedMonth: Date = .now
     let onSelect: (MurphSession) -> Void
 
     private let calendar = Calendar.current
     private let columns = Array(repeating: GridItem(.flexible()), count: 7)
+
+    // Same rule as HistoryListView: the calendar shows PAST sessions only. An
+    // .inProgress row can outlive its workout (app killed between "Begin" and
+    // "Start Run 1" leaves startedAt == nil, which the resume finder
+    // deliberately ignores, so nothing cleans it up). Left unfiltered it would
+    // render as an invisible marker on a day that is nonetheless tappable —
+    // opening a detail screen from a cell that looks empty.
+    private var sessions: [MurphSession] {
+        allSessions.filter { $0.status != .inProgress }
+    }
 
     private var days: [CalendarDay] {
         CalendarMonthBuilder.build(month: displayedMonth, sessions: sessions, calendar: calendar)
