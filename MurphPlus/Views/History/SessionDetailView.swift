@@ -49,6 +49,8 @@ struct SessionDetailView: View {
                 .frame(minHeight: 80)
             }
 
+            PredictionControlView(session: session)
+
             Section {
                 Button("Delete Session", role: .destructive) {
                     showDeleteConfirm = true
