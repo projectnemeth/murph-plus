@@ -38,12 +38,22 @@ struct RootTabView: View {
                     resumableSession = nil
                 },
                 onAbandon: {
-                    session.status = .abandoned
-                    session.completedAt = .now
-                    try? context.save()
+                    // Delegate to the engine rather than mutating the session
+                    // inline: SessionEngine.abandon() also clears
+                    // currentPhaseStartedAt, and a second hand-rolled copy of
+                    // "abandon a session" would silently drift from it.
+                    SessionEngine(session: session, context: context).abandon()
                     resumableSession = nil
                 }
             )
+            // Resume-or-abandon must be an explicit choice. A swipe-dismiss
+            // would leave the session .inProgress — and since History and
+            // Calendar both filter .inProgress out, it would become invisible
+            // with no route back: `.task` runs once per launch, `onBegin`
+            // creates a new session unconditionally, and findInProgress returns
+            // only the newest row. The workout would survive in the store but be
+            // permanently unreachable, which is indistinguishable from data loss.
+            .interactiveDismissDisabled()
         }
         .task {
             resumableSession = ResumableSessionFinder.findInProgress(context: context)
