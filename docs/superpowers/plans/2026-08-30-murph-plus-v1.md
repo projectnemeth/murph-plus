@@ -1450,6 +1450,10 @@ Expected: `cannot find 'ResumableSessionFinder' in scope`
 
 ```swift
 // MurphPlus/Persistence/ResumableSessionFinder.swift
+// `Foundation` is required: #Predicate and SortDescriptor are not visible with
+// `import SwiftData` alone (omitting it yields "no macro named 'Predicate'" and
+// "cannot find 'SortDescriptor' in scope").
+import Foundation
 import SwiftData
 
 enum ResumableSessionFinder {
