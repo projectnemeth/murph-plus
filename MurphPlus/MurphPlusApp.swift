@@ -20,7 +20,7 @@ struct MurphPlusApp: App {
 
     var body: some Scene {
         WindowGroup {
-            Text("Murph Plus")
+            RootTabView()
         }
         .modelContainer(container)
     }
