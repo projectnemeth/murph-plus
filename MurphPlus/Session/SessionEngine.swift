@@ -20,7 +20,17 @@ final class SessionEngine {
         return SessionEngine(session: session, context: context)
     }
 
+    /// A completed or abandoned session is terminal: no further transition may
+    /// mutate it. Guarding on phase alone is not enough, because `abandon()`
+    /// changes only `status` — leaving `phase` wherever it was, which would let
+    /// `completeRound()`/`finishRun()` run afterwards and silently flip an
+    /// abandoned session back to `.completed`, destroying the record.
+    private var isTerminal: Bool {
+        session.status == .completed || session.status == .abandoned
+    }
+
     func start() {
+        guard !isTerminal else { return }
         guard session.phase == .notStarted else { return }
         let now = Date.now
         session.startedAt = now
@@ -30,6 +40,7 @@ final class SessionEngine {
     }
 
     func finishRun() {
+        guard !isTerminal else { return }
         guard session.phase == .run1 || session.phase == .run2,
               let start = session.currentPhaseStartedAt else { return }
 
@@ -52,6 +63,7 @@ final class SessionEngine {
     }
 
     func completeRound() {
+        guard !isTerminal else { return }
         guard session.phase == .rounds, let template = session.template else { return }
 
         let nextRoundNumber = session.completedRounds + 1
@@ -68,6 +80,7 @@ final class SessionEngine {
     }
 
     func abandon() {
+        guard !isTerminal else { return }
         session.status = .abandoned
         session.completedAt = .now
         session.currentPhaseStartedAt = nil

@@ -81,4 +81,52 @@ final class SessionEngineTests: XCTestCase {
         XCTAssertEqual(engine.session.status, .abandoned)
         XCTAssertNotNil(engine.session.completedAt)
     }
+
+    // An abandoned session is terminal. Without a status guard, `abandon()`
+    // leaves `phase` untouched, so a phase-only guard would let completeRound()
+    // and then finishRun() run afterwards and flip the session back to
+    // .completed — silently erasing the user's abandonment.
+    func test_abandonedSession_cannotBeResurrectedByFurtherTransitions() {
+        let template = makeTemplate(rounds: 1)
+        let engine = SessionEngine.startNew(template: template, vestOn: false, vestWeightLbs: nil, context: context)
+        engine.start()
+        engine.finishRun()
+        engine.abandon()
+
+        engine.completeRound()
+        engine.finishRun()
+
+        XCTAssertEqual(engine.session.status, .abandoned)
+        XCTAssertEqual(engine.session.roundLogs.count, 0)
+    }
+
+    func test_completedSession_cannotBeAbandoned() {
+        let template = makeTemplate(rounds: 1)
+        let engine = SessionEngine.startNew(template: template, vestOn: false, vestWeightLbs: nil, context: context)
+        engine.start()
+        engine.finishRun()
+        engine.completeRound()
+        engine.finishRun()
+        let completedAt = engine.session.completedAt
+
+        engine.abandon()
+
+        XCTAssertEqual(engine.session.status, .completed)
+        XCTAssertEqual(engine.session.completedAt, completedAt)
+    }
+
+    func test_invalidPhaseTransitionsAreIgnored() {
+        let template = makeTemplate(rounds: 2)
+        let engine = SessionEngine.startNew(template: template, vestOn: false, vestWeightLbs: nil, context: context)
+
+        engine.completeRound()
+        XCTAssertEqual(engine.session.completedRounds, 0)
+
+        engine.start()
+        engine.start()
+        XCTAssertEqual(engine.session.phase, .run1)
+
+        engine.completeRound()
+        XCTAssertEqual(engine.session.completedRounds, 0)
+    }
 }
