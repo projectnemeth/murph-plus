@@ -55,24 +55,29 @@ struct SessionDetailView: View {
                 Button("Delete Session", role: .destructive) {
                     showDeleteConfirm = true
                 }
+                // Anchored on the button itself, not a distant ancestor (the Form
+                // or the view root) — the system positions the confirmation
+                // relative to whatever view the modifier is attached to, so
+                // attaching it here is what makes it appear next to this button
+                // instead of defaulting to the top of the screen.
+                .confirmationDialog("Delete this session?", isPresented: $showDeleteConfirm) {
+                    Button("Delete", role: .destructive) {
+                        // Dismiss before deleting: this view is @Bindable on `session` and the
+                        // parent still holds it in navigationDestination(item:), so deleting
+                        // first can leave a body evaluation reading a deleted model.
+                        dismiss()
+                        context.delete(session)
+                        do {
+                            try context.save()
+                        } catch {
+                            // A destructive action must not silently report success.
+                            assertionFailure("Failed to delete session: \(error)")
+                        }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                }
             }
         }
         .navigationTitle(session.date.formatted(date: .abbreviated, time: .omitted))
-        .confirmationDialog("Delete this session?", isPresented: $showDeleteConfirm) {
-            Button("Delete", role: .destructive) {
-                // Dismiss before deleting: this view is @Bindable on `session` and the
-                // parent still holds it in navigationDestination(item:), so deleting
-                // first can leave a body evaluation reading a deleted model.
-                dismiss()
-                context.delete(session)
-                do {
-                    try context.save()
-                } catch {
-                    // A destructive action must not silently report success.
-                    assertionFailure("Failed to delete session: \(error)")
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        }
     }
 }

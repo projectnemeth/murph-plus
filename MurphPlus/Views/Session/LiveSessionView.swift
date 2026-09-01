@@ -9,25 +9,34 @@ struct LiveSessionView: View {
     @State private var showAbandonConfirm = false
 
     var body: some View {
-        VStack(spacing: 24) {
-            TimelineView(.periodic(from: .now, by: 1)) { _ in
-                Text(elapsedTimeText)
-                    .font(.system(size: 48, weight: .bold, design: .monospaced))
-            }
+        NavigationStack {
+            VStack(spacing: 24) {
+                TimelineView(.periodic(from: .now, by: 1)) { _ in
+                    Text(elapsedTimeText)
+                        .font(.system(size: 48, weight: .bold, design: .monospaced))
+                }
 
-            phaseContent
+                phaseContent
 
-            Button("Abandon", role: .destructive) {
-                showAbandonConfirm = true
+                Spacer()
             }
-        }
-        .padding()
-        .confirmationDialog("Abandon this session?", isPresented: $showAbandonConfirm) {
-            Button("Abandon", role: .destructive) {
-                engine.abandon()
-                onFinished()
+            .padding()
+            // Abandon lives in the toolbar, away from the primary action button,
+            // so a mid-workout reach for "Round Done" can't land on it by mistake.
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Abandon", role: .destructive) {
+                        showAbandonConfirm = true
+                    }
+                }
             }
-            Button("Cancel", role: .cancel) {}
+            .confirmationDialog("Abandon this session?", isPresented: $showAbandonConfirm) {
+                Button("Abandon", role: .destructive) {
+                    engine.abandon()
+                    onFinished()
+                }
+                Button("Cancel", role: .cancel) {}
+            }
         }
         .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
         .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
@@ -39,15 +48,35 @@ struct LiveSessionView: View {
         case .notStarted:
             Button("Start Run 1") { engine.start() }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.large)
         case .run1:
             Button("Finish Run 1") { engine.finishRun() }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.large)
         case .rounds:
-            VStack {
+            VStack(spacing: 12) {
                 Text("Round \(engine.session.completedRounds + 1) of \(engine.session.template?.rounds ?? 1)")
                     .font(.title2)
-                Button("Round Done") { engine.completeRound() }
-                    .buttonStyle(.borderedProminent)
+                if let template = engine.session.template {
+                    Text(roundBreakdown(for: template))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Button {
+                    engine.completeRound()
+                } label: {
+                    // Frame goes on the label — a frame applied to the Button
+                    // itself, after .buttonStyle, does not affect how wide
+                    // .borderedProminent actually draws its background.
+                    Text("Round Done")
+                        .font(.title2.bold())
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.roundedRectangle(radius: 14))
+                .controlSize(.large)
+                .padding(.top, 8)
             }
         case .run2:
             Button("Finish Run 2") {
@@ -55,10 +84,15 @@ struct LiveSessionView: View {
                 onFinished()
             }
             .buttonStyle(.borderedProminent)
+            .controlSize(.large)
         case .completed:
             Text("Done!")
                 .font(.title)
         }
+    }
+
+    private func roundBreakdown(for template: WorkoutTemplate) -> String {
+        "\(template.pullUpsPerRound) pull-ups · \(template.pushUpsPerRound) push-ups · \(template.squatsPerRound) squats"
     }
 
     private var elapsedTimeText: String {
