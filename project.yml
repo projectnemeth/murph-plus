@@ -19,6 +19,15 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: true
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_CFBundleDisplayName: "Murph Plus"
+        INFOPLIST_KEY_UIUserInterfaceStyle: Dark
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    info:
+      path: MurphPlus/Info.plist
+      properties:
+        UIAppFonts:
+          - ArchivoBlack-Regular.ttf
+          - DMSans-Variable.ttf
+          - MartianMono-Variable.ttf
   MurphPlusTests:
     type: bundle.unit-test
     platform: iOS

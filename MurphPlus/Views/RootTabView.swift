@@ -17,11 +17,16 @@ struct RootTabView: View {
             StartView { template, vestOn, vestWeight in
                 liveEngine = SessionEngine.startNew(template: template, vestOn: vestOn, vestWeightLbs: vestWeight, context: context)
             }
-            .tabItem { Label("Start", systemImage: "play.circle") }
+            .tabItem { Label("Start", systemImage: "play.fill") }
 
             HistoryView()
                 .tabItem { Label("History", systemImage: "list.bullet") }
         }
+        .tint(MurphColor.hazard500)
+        .toolbarBackground(MurphColor.surfaceCard, for: .tabBar)
+        .toolbarBackground(.visible, for: .tabBar)
+        .toolbarColorScheme(.dark, for: .tabBar)
+        .preferredColorScheme(.dark)
         .fullScreenCover(item: Binding(
             get: { liveEngine.map { LiveSessionWrapper(engine: $0) } },
             set: { liveEngine = $0?.engine }

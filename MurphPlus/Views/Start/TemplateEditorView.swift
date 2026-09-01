@@ -32,49 +32,64 @@ struct TemplateEditorView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Name") {
-                    TextField("e.g. Half Murph", text: $name)
-                }
+            ScrollView {
+                VStack(alignment: .leading, spacing: MurphSpacing.gapSection) {
+                    VStack(alignment: .leading, spacing: MurphSpacing.gapStack) {
+                        MurphSectionHeader("Name")
+                        MurphTextField(text: $name, placeholder: "e.g. Half Murph")
+                    }
 
-                Section("Runs") {
-                    Stepper(value: $runDistanceMiles, in: 0.25...5, step: 0.25) {
-                        Text("\(runDistanceMiles, specifier: "%.2f") mi each")
+                    VStack(alignment: .leading, spacing: MurphSpacing.gapStack) {
+                        MurphSectionHeader("Runs")
+                        MurphStepper(
+                            label: "Distance each",
+                            value: $runDistanceMiles,
+                            display: String(format: "%.2f mi", runDistanceMiles),
+                            step: 0.25, minValue: 0.25, maxValue: 5
+                        )
                     }
-                }
 
-                Section("Total Reps") {
-                    Stepper(value: $totalPullUps, in: 1...1000, step: 5) {
-                        Text("Pull-ups: \(totalPullUps)")
+                    VStack(alignment: .leading, spacing: MurphSpacing.gapStack) {
+                        MurphSectionHeader("Total reps")
+                        MurphStepper(label: "Pull-ups", intValue: $totalPullUps, step: 5, min: 1, max: 1000)
+                        MurphStepper(label: "Push-ups", intValue: $totalPushUps, step: 5, min: 1, max: 1000)
+                        MurphStepper(label: "Squats", intValue: $totalSquats, step: 5, min: 1, max: 1000)
                     }
-                    Stepper(value: $totalPushUps, in: 1...1000, step: 5) {
-                        Text("Push-ups: \(totalPushUps)")
-                    }
-                    Stepper(value: $totalSquats, in: 1...1000, step: 5) {
-                        Text("Squats: \(totalSquats)")
-                    }
-                }
 
-                Section("Partitioning") {
-                    Stepper(value: $rounds, in: 1...50) {
-                        Text(rounds == 1 ? "Straight sets" : "\(rounds) rounds")
-                    }
-                    if !roundsFitEveryExercise {
-                        // A disabled Save with no explanation is a dead end —
-                        // say which way the numbers conflict.
-                        Text("Too many rounds to divide these reps: each exercise needs at least one rep per round. Lower the rounds or raise the reps.")
-                            .font(.caption)
-                            .foregroundStyle(.red)
+                    VStack(alignment: .leading, spacing: MurphSpacing.gapStack) {
+                        MurphSectionHeader("Partitioning")
+                        MurphStepper(
+                            label: rounds == 1 ? "Straight sets" : "Rounds",
+                            intValue: $rounds, min: 1, max: 50
+                        )
+                        if !roundsFitEveryExercise {
+                            // A disabled Save with no explanation is a dead end —
+                            // say which way the numbers conflict.
+                            MurphBanner(tone: .error, text: "Too many rounds to divide these reps: each exercise needs at least one rep per round. Lower the rounds or raise the reps.")
+                        } else {
+                            MurphCard {
+                                MurphFlowLayout(maxWidth: MurphFlowWidth.card) {
+                                    MurphBadge(title: "\(totalPullUps + totalPushUps + totalSquats) reps")
+                                    if rounds > 1 {
+                                        MurphBadge(title: "\(totalPullUps / rounds) / \(totalPushUps / rounds) / \(totalSquats / rounds) per round")
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
+                .padding(.horizontal, MurphSpacing.gutterScreen)
+                .padding(.top, MurphSpacing.space2)
+                .padding(.bottom, MurphSpacing.space8)
             }
-            .navigationTitle("New Template")
+            .murphScreenBackground()
+            .murphNavBar(title: "New template")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    MurphButton(variant: .ghost, size: .sm, title: "Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                    MurphButton(variant: .primary, size: .sm, title: "Save") {
                         let template = WorkoutTemplate(
                             name: name,
                             runDistanceMiles: runDistanceMiles,

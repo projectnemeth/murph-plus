@@ -7,15 +7,32 @@ struct ResumeSessionPrompt: View {
     let onAbandon: () -> Void
 
     var body: some View {
-        VStack(spacing: 16) {
-            Text("You have an unfinished Murph from \(session.date.formatted(date: .abbreviated, time: .shortened))")
-                .multilineTextAlignment(.center)
-            HStack {
-                Button("Abandon", role: .destructive, action: onAbandon)
-                Button("Resume", action: onResume)
-                    .buttonStyle(.borderedProminent)
+        VStack(alignment: .leading, spacing: MurphSpacing.space4) {
+            Rectangle()
+                .fill(MurphColor.hazard500)
+                .frame(height: MurphShape.borderStrong)
+
+            VStack(alignment: .leading, spacing: MurphSpacing.space4) {
+                Text("Unfinished Murph")
+                    .murphType(.title())
+                    .foregroundStyle(MurphColor.textPrimary)
+                Text("You have an unfinished Murph from \(session.date.formatted(date: .abbreviated, time: .shortened)).")
+                    .murphType(.body)
+                    .foregroundStyle(MurphColor.textSecondary)
+
+                VStack(spacing: MurphSpacing.space3) {
+                    MurphButton(variant: .danger, full: true, title: "Abandon", action: onAbandon)
+                    MurphButton(variant: .inverse, full: true, title: "Resume", action: onResume)
+                }
+                .padding(.top, MurphSpacing.space2)
             }
+            .padding(.horizontal, MurphSpacing.gutterScreen)
+            .padding(.bottom, MurphSpacing.space6)
         }
-        .padding()
+        .padding(.top, 0)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(MurphColor.surfaceCard.ignoresSafeArea())
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.hidden)
     }
 }

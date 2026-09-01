@@ -2,101 +2,166 @@
 import SwiftUI
 import UIKit
 
+private struct PhaseCopy {
+    let label: String
+    let action: String
+    let icon: String
+}
+
+private let phaseCopy: [SessionPhase: PhaseCopy] = [
+    .notStarted: PhaseCopy(label: "Not started", action: "Start run 1", icon: "play.fill"),
+    .run1: PhaseCopy(label: "Run 1", action: "Finish run 1", icon: "figure.run"),
+    .rounds: PhaseCopy(label: "Rounds", action: "Round done", icon: "arrow.triangle.2.circlepath"),
+    .run2: PhaseCopy(label: "Run 2", action: "Finish run 2", icon: "flag.fill"),
+    .completed: PhaseCopy(label: "Completed", action: "Done", icon: "checkmark"),
+]
+
 struct LiveSessionView: View {
     let engine: SessionEngine
     let onFinished: () -> Void
 
     @State private var showAbandonConfirm = false
 
+    private var session: MurphSession { engine.session }
+    private var phase: SessionPhase { session.phase }
+    private var copy: PhaseCopy { phaseCopy[phase] ?? phaseCopy[.notStarted]! }
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
-                TimelineView(.periodic(from: .now, by: 1)) { _ in
-                    Text(elapsedTimeText)
-                        .font(.system(size: 48, weight: .bold, design: .monospaced))
-                }
-
-                phaseContent
-
-                Spacer()
-            }
-            .padding()
-            // Abandon lives in the toolbar, away from the primary action button,
-            // so a mid-workout reach for "Round Done" can't land on it by mistake.
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Abandon", role: .destructive) {
-                        showAbandonConfirm = true
+            ZStack {
+                content
+                if showAbandonConfirm {
+                    MurphDialog(
+                        title: "Abandon this session?",
+                        body: "It stays in your history, flagged incomplete.",
+                        onDismiss: { showAbandonConfirm = false }
+                    ) {
+                        MurphButton(variant: .danger, full: true, title: "Abandon") {
+                            showAbandonConfirm = false
+                            engine.abandon()
+                            onFinished()
+                        }
+                        MurphButton(variant: .secondary, full: true, title: "Keep going") {
+                            showAbandonConfirm = false
+                        }
                     }
                 }
             }
-            .confirmationDialog("Abandon this session?", isPresented: $showAbandonConfirm) {
-                Button("Abandon", role: .destructive) {
-                    engine.abandon()
-                    onFinished()
+            .murphScreenBackground()
+            .murphNavBar(title: "Live session")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    MurphIconButton(label: "Close", systemImage: "xmark", disabled: phase != .completed) {
+                        onFinished()
+                    }
                 }
-                Button("Cancel", role: .cancel) {}
             }
         }
         .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
         .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
     }
 
-    @ViewBuilder
-    private var phaseContent: some View {
-        switch engine.session.phase {
-        case .notStarted:
-            Button("Start Run 1") { engine.start() }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-        case .run1:
-            Button("Finish Run 1") { engine.finishRun() }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-        case .rounds:
-            VStack(spacing: 12) {
-                Text("Round \(engine.session.completedRounds + 1) of \(engine.session.template?.rounds ?? 1)")
-                    .font(.title2)
-                if let template = engine.session.template {
-                    Text(roundBreakdown(for: template))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+    private var content: some View {
+        VStack(spacing: 0) {
+            MurphFlowLayout {
+                MurphBadge(tone: .live, dot: true, title: copy.label)
+                if session.vestOn, let weight = session.vestWeightLbs {
+                    MurphBadge(tone: .vest, title: "\(weight) lb vest")
                 }
-                Button {
-                    engine.completeRound()
-                } label: {
-                    // Frame goes on the label — a frame applied to the Button
-                    // itself, after .buttonStyle, does not affect how wide
-                    // .borderedProminent actually draws its background.
-                    Text("Round Done")
-                        .font(.title2.bold())
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
+                if let template = session.template {
+                    MurphBadge(title: template.rounds == 1 ? "Straight sets" : "\(template.rounds) rounds")
                 }
-                .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.roundedRectangle(radius: 14))
-                .controlSize(.large)
-                .padding(.top, 8)
             }
-        case .run2:
-            Button("Finish Run 2") {
-                engine.finishRun()
-                onFinished()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, MurphSpacing.gutterScreen)
+
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                MurphClock(
+                    label: "Elapsed",
+                    seconds: engine.totalElapsed,
+                    size: .lg,
+                    running: phase != .notStarted && phase != .completed,
+                    tone: phase == .completed ? .accent : .default
+                )
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-        case .completed:
-            Text("Done!")
-                .font(.title)
+            .padding(.init(top: MurphSpacing.space6, leading: MurphSpacing.gutterScreen, bottom: MurphSpacing.space5, trailing: MurphSpacing.gutterScreen))
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            HazardRule(height: 8, width: nil)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: MurphSpacing.gapSection) {
+                    phaseBody
+                    if !session.runSplits.isEmpty {
+                        VStack(alignment: .leading, spacing: 0) {
+                            MurphSectionHeader("Logged")
+                            ForEach(session.runSplits.sorted { $0.runIndex < $1.runIndex }, id: \.persistentModelID) { split in
+                                MurphSplitRow(label: "Run \(split.runIndex)", value: formatDuration(split.durationSeconds), tone: .accent)
+                            }
+                        }
+                    }
+                    if phase == .completed {
+                        Text("Logged to your history.")
+                            .murphType(.body)
+                            .foregroundStyle(MurphColor.textMuted)
+                    }
+                }
+                .padding(MurphSpacing.gutterScreen)
+            }
+
+            VStack(spacing: MurphSpacing.space3) {
+                MurphButton(variant: .primary, size: .lg, full: true, icon: Image(systemName: copy.icon), title: copy.action) {
+                    advance()
+                }
+                if phase != .completed {
+                    MurphButton(variant: .danger, full: true, title: "Abandon") {
+                        showAbandonConfirm = true
+                    }
+                }
+            }
+            .padding(.init(top: MurphSpacing.space4, leading: MurphSpacing.gutterScreen, bottom: MurphSpacing.space8, trailing: MurphSpacing.gutterScreen))
+            .overlay(alignment: .top) {
+                Rectangle().fill(MurphColor.lineHairline).frame(height: MurphShape.borderHair)
+            }
         }
     }
 
-    private func roundBreakdown(for template: WorkoutTemplate) -> String {
-        "\(template.pullUpsPerRound) pull-ups · \(template.pushUpsPerRound) push-ups · \(template.squatsPerRound) squats"
+    @ViewBuilder
+    private var phaseBody: some View {
+        if phase == .rounds, let template = session.template {
+            MurphRoundCounter(
+                current: session.completedRounds + 1,
+                total: template.rounds,
+                repsLabel: "\(template.pullUpsPerRound) pull-ups \u{00b7} \(template.pushUpsPerRound) push-ups \u{00b7} \(template.squatsPerRound) squats"
+            )
+        } else if phase == .notStarted, let template = session.template {
+            Text("\(template.runDistanceMiles.formatted(.number.precision(.fractionLength(2)))) mile run, \(template.totalPullUps) pull-ups, \(template.totalPushUps) push-ups, \(template.totalSquats) squats, \(template.runDistanceMiles.formatted(.number.precision(.fractionLength(2)))) mile run.")
+                .murphType(.bodyLg)
+                .foregroundStyle(MurphColor.textSecondary)
+        } else if phase == .run1 || phase == .run2, let template = session.template {
+            HStack(spacing: MurphSpacing.space4) {
+                Image(systemName: "figure.run")
+                    .font(.system(size: 30))
+                    .foregroundStyle(MurphColor.hazard500)
+                Text("\(template.runDistanceMiles.formatted(.number.precision(.fractionLength(2)))) mile \(phase == .run1 ? "out" : "back")")
+                    .murphType(.display3())
+                    .foregroundStyle(MurphColor.textPrimary)
+            }
+        }
     }
 
-    private var elapsedTimeText: String {
-        let seconds = Int(engine.totalElapsed)
-        return String(format: "%02d:%02d", seconds / 60, seconds % 60)
+    private func advance() {
+        switch phase {
+        case .notStarted:
+            engine.start()
+        case .run1:
+            engine.finishRun()
+        case .rounds:
+            engine.completeRound()
+        case .run2:
+            engine.finishRun()
+        case .completed:
+            onFinished()
+        }
     }
 }
