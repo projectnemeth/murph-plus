@@ -62,6 +62,7 @@ struct SessionDetailView: View {
                 VStack(alignment: .leading, spacing: MurphSpacing.gapSection) {
                     header
                     summaryCard
+                    progressLine
                     if run1 != nil || run2 != nil { splitsSection }
                     if !roundThroughputs.isEmpty { roundsSection }
                     notesSection
@@ -137,11 +138,28 @@ struct SessionDetailView: View {
                 if session.status == .completed {
                     MurphClock(label: "Total time", seconds: session.totalElapsedSeconds ?? 0, size: .md)
                 } else {
-                    MurphStatTile(label: "Total time", value: "\u{2014}", caption: "Abandoned before finishing")
+                    // Both startedAt and completedAt are set on abandon, so this
+                    // duration is real — the em-dash it replaced was discarding
+                    // data the session already had.
+                    MurphClock(label: "Stopped at", seconds: session.totalElapsedSeconds ?? 0, size: .md)
                 }
                 Spacer()
                 MurphStatTile(label: "Reps", value: "\(session.template?.totalReps ?? 0)", alignTrailing: true)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var progressLine: some View {
+        if let text = SessionProgressDescriber.describe(
+            phase: session.phase,
+            roundsCompleted: session.completedRounds,
+            totalRounds: session.template?.rounds ?? 0,
+            repsPerRound: session.template?.repsPerRound ?? 0
+        ) {
+            Text(text)
+                .murphType(.bodySm)
+                .foregroundStyle(MurphColor.textMuted)
         }
     }
 

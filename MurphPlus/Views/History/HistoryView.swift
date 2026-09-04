@@ -90,6 +90,11 @@ struct HistoryView: View {
                                 time: session.totalElapsedSeconds.map(formatDuration),
                                 vestLabel: session.vestOn ? "\(session.vestWeightLbs ?? 20) lb vest" : nil,
                                 isCompleted: session.status == .completed,
+                                progressLabel: SessionProgressDescriber.shortDescription(
+                                    phase: session.phase,
+                                    roundsCompleted: session.completedRounds,
+                                    totalRounds: session.template?.rounds ?? 0
+                                ),
                                 isPR: session.status == .completed && session.totalElapsedSeconds == summary.personalBestSeconds,
                                 showBottomDivider: index != sessions.count - 1,
                                 action: { selectedSession = session }

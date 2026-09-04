@@ -1,7 +1,7 @@
 // MurphPlus/DesignSystem/Components/MurphSessionRow.swift
 // History list row. Left bar is lime for completed, dust for abandoned
 // (components/data/SessionRow.jsx). Abandoned rows show a dust "Abandoned"
-// badge instead of a time — never a fabricated duration.
+// badge and how far the attempt got — never a fabricated duration.
 import SwiftUI
 
 struct MurphSessionRow: View {
@@ -10,6 +10,7 @@ struct MurphSessionRow: View {
     var time: String? = nil
     var vestLabel: String? = nil
     var isCompleted: Bool
+    var progressLabel: String? = nil
     var isPR: Bool = false
     var showBottomDivider: Bool = true
     let action: () -> Void
@@ -48,6 +49,11 @@ struct MurphSessionRow: View {
                             .foregroundStyle(MurphColor.textPrimary)
                     } else {
                         MurphBadge(tone: .abandoned, title: "Abandoned")
+                        if let progressLabel {
+                            Text(progressLabel)
+                                .murphType(.bodySm)
+                                .foregroundStyle(MurphColor.textMuted)
+                        }
                     }
                     if isPR {
                         MurphBadge(tone: .pr, title: "PR")
