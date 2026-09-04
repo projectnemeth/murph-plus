@@ -1,5 +1,10 @@
 # Handoff — Watch Stage 3 (sync)
 
+> **Superseded 2026-09-04 (later same day).** Tasks 3-6 are now done and the
+> simulator defects below are fixed. Only **Task 7 — hardware verification**
+> remains; see "What is left" at the bottom. The body of this document is kept
+> as the record of where Tasks 1-2 stood.
+
 **Date:** 2026-09-04
 **Branch:** `worktree-watch-stage-3` (worktree at `.claude/worktrees/watch-stage-3`)
 **Plan:** `docs/superpowers/plans/2026-09-03-murph-plus-watch-stage-3-sync.md`
@@ -104,3 +109,83 @@ and consciously deferred — fold them in when convenient, they are not blockers
   arrays.
 - No degenerate tests for an empty `events` array, or a journal that does not start
   with `.started`.
+
+
+---
+
+# Update — Tasks 3-6 complete, simulator defects fixed
+
+**Date:** 2026-09-04 (later the same day)
+
+## Verified state
+
+| Check | Result |
+|---|---|
+| iOS tests | **223 / 0 failures**, `** TEST SUCCEEDED **` (clean DerivedData) |
+| Watch build | `** BUILD SUCCEEDED **` (watchOS Simulator, clean DerivedData) |
+
+Commits on top of `93cc9ba`:
+
+- `a74abee` — fix: HealthKit entitlement, app icon, display title, start timeout
+- `2ded2cf` — Task 3: WatchConnectivity across all three channels
+- `0a86524` — Task 6: heart rate and distance in session detail
+- `9669fe0` — Task 4: synced templates and the PB badge
+- `04bd8a6` — Task 5: read-only phone mirror and the start guard
+- (final) — fix: never offer to resume a watch-owned session on the phone
+
+## The defect that mattered
+
+**No target declared any entitlements**, so the watch app never had
+`com.apple.developer.healthkit`. Every HealthKit call failed — but silently, and
+in the worst possible shape: `HKWorkoutSession.init` still *succeeds* without the
+entitlement, so the defensive `catch` in `WorkoutSessionController.start` never
+fired. HealthKit's task server then failed to start and
+`builder.beginCollection(at:)` was never called back, leaving `startSession`
+suspended forever. That is the "app won't start" symptom: the workout never
+began, the UI never advanced past setup, and watchOS eventually killed the app
+for sitting wedged in the `workout-processing` background mode.
+
+This means **no HealthKit code from Stages 1-3 had ever actually run** — no
+workout session, no heart rate, no distance, nothing written to Fitness. Treat
+the Task 7 hardware matrix as the first real exercise of all of it, not just of
+Stage 3's sync.
+
+A second, independent fix went in alongside: `startSession` now bounds its wait
+on HealthKit. The entitlement was the trigger, but an unbounded await breaks
+`WorkoutSessionController`'s own stated contract that "nothing in this type may
+block the workout" for *any* stall.
+
+## Departures from the task briefs
+
+Each is deliberate and commit messages carry the full reasoning:
+
+- **Task 3** — the brief hardcodes `WatchSyncCoordinator()` on the controller and
+  says to *replace* `record(_:)`. Ruling S2 forbids both. Transport is injected
+  through the initialiser; the emission is added alongside the `journalWriteFailed`
+  do/catch rather than over it.
+- **Task 4** — the brief's shape would have constructed a *second*
+  `WatchSyncCoordinator`. It claims `WCSession.default.delegate`, so a second
+  instance silently displaces the first and context stops arriving. The app now
+  owns exactly one.
+- **Task 5** — `MurphBanner` is `(tone:text:)`, not the `(tone:title:message:)`
+  the brief assumed. The brief flagged that signature as unverified; it was wrong.
+
+## What is left
+
+**Task 7 — end-to-end verification on real hardware. Not run, and not runnable
+here:** it needs a physically paired iPhone and Apple Watch and physical acts
+(power the phone off, walk out of Bluetooth range, let the watch battery die).
+Its brief in `.superpowers/sdd/.../task-7-brief.md` has all eight steps.
+
+One of its assertions was checkable as logic and **was** a real bug, now fixed:
+Step 5 requires the phone to offer *abandon but not resume* for a watch-owned
+session. `ResumableSessionFinder` did not filter by origin — before Stage 3
+every session was phone-owned, so it never had to — and was offering to resume
+sessions whose journal lives on the Watch. Worth re-reading the other seven
+steps the same way before booking device time.
+
+Also still open from earlier: **Task 2 was never independently reviewed** (Task 1
+was). And two of Task 1's three deferred minors remain — the degenerate-input
+tests for an empty `events` array and a journal not starting with `.started`.
+The third, the undocumented "checkpointSeq starts at 1" invariant, is now
+documented at the point that depends on it.
