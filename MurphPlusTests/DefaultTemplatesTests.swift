@@ -20,11 +20,29 @@ final class DefaultTemplatesTests: XCTestCase {
             $0.rounds == 20 && $0.runDistanceMiles == 1.0 && $0.totalPullUps == 100 && $0.totalPushUps == 200 && $0.totalSquats == 300
         }, "Full Murph Cindy-style")
         XCTAssertTrue(templates.contains {
-            $0.rounds == 1 && $0.runDistanceMiles == 0.5 && $0.totalPullUps == 50 && $0.totalPushUps == 100 && $0.totalSquats == 150
+            $0.rounds == 10 && $0.runDistanceMiles == 0.5 && $0.totalPullUps == 50 && $0.totalPushUps == 100 && $0.totalSquats == 150
         }, "Half Murph — 50% scale on reps and run distance")
         XCTAssertTrue(templates.contains {
-            $0.rounds == 1 && $0.runDistanceMiles == 0.25 && $0.totalPullUps == 25 && $0.totalPushUps == 50 && $0.totalSquats == 75
+            $0.rounds == 5 && $0.runDistanceMiles == 0.25 && $0.totalPullUps == 25 && $0.totalPushUps == 50 && $0.totalSquats == 75
         }, "Mini Murph — 25% scale on reps and run distance")
+    }
+
+    func test_seedsHalfAndMiniMurphAsCindyStyle() throws {
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: WorkoutTemplate.self, MurphSession.self, RunSplit.self, RoundLog.self, configurations: config)
+        let context = ModelContext(container)
+
+        try DefaultTemplates.seedIfNeeded(context: context)
+
+        let templates = try context.fetch(FetchDescriptor<WorkoutTemplate>())
+        let half = try XCTUnwrap(templates.first { $0.name == "Half Murph" })
+        let mini = try XCTUnwrap(templates.first { $0.name == "Mini Murph" })
+
+        XCTAssertEqual(half.rounds, 10)
+        XCTAssertEqual(mini.rounds, 5)
+        // Both partition into the same 5/10/15 Cindy set.
+        XCTAssertEqual(half.pullUpsPerRound, 5)
+        XCTAssertEqual(mini.pullUpsPerRound, 5)
     }
 
     func test_seedIfNeeded_doesNothingWhenTemplatesExist() throws {

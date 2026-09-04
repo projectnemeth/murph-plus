@@ -13,7 +13,7 @@ enum DefaultTemplates {
             totalPullUps: 50,
             totalPushUps: 100,
             totalSquats: 150,
-            rounds: 1
+            rounds: 10
         )
         let miniMurph = WorkoutTemplate(
             name: "Mini Murph",
@@ -21,7 +21,7 @@ enum DefaultTemplates {
             totalPullUps: 25,
             totalPushUps: 50,
             totalSquats: 75,
-            rounds: 1
+            rounds: 5
         )
         context.insert(straightSets)
         context.insert(cindyStyle)
