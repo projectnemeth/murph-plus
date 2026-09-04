@@ -103,6 +103,9 @@ struct LiveSessionView: View {
                 if let template = session.template {
                     MurphBadge(title: template.rounds == 1 ? "Straight sets" : "\(template.rounds) rounds")
                 }
+                if engine.isPaused {
+                    MurphBadge(tone: .abandoned, title: "Paused")
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, MurphSpacing.gutterScreen)
@@ -112,7 +115,7 @@ struct LiveSessionView: View {
                     label: "Elapsed",
                     seconds: engine.totalElapsed,
                     size: .lg,
-                    running: phase != .notStarted && phase != .completed,
+                    running: phase != .notStarted && phase != .completed && !engine.isPaused,
                     tone: phase == .completed ? .accent : .default
                 )
             }
@@ -144,6 +147,17 @@ struct LiveSessionView: View {
             VStack(spacing: MurphSpacing.space3) {
                 MurphButton(variant: .primary, size: .lg, full: true, icon: Image(systemName: copy.icon), title: copy.action) {
                     advance()
+                }
+                .disabled(engine.isPaused)
+                if phase != .notStarted && phase != .completed {
+                    MurphButton(
+                        variant: .secondary,
+                        full: true,
+                        icon: Image(systemName: engine.isPaused ? "play.fill" : "pause.fill"),
+                        title: engine.isPaused ? "Resume" : "Pause"
+                    ) {
+                        if engine.isPaused { engine.resume() } else { engine.pause() }
+                    }
                 }
             }
             .padding(.init(top: MurphSpacing.space4, leading: MurphSpacing.gutterScreen, bottom: MurphSpacing.space8, trailing: MurphSpacing.gutterScreen))
