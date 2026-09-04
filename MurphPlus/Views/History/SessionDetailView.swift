@@ -128,6 +128,9 @@ struct SessionDetailView: View {
                 } else {
                     MurphBadge(title: "No vest")
                 }
+                if session.origin == .watch {
+                    MurphBadge(title: "Apple Watch")
+                }
             }
         }
     }
@@ -165,15 +168,30 @@ struct SessionDetailView: View {
         }
     }
 
+    private func splitValue(_ split: RunSplit) -> String {
+        SessionDetailValue.run(
+            duration: formatDuration(split.durationSeconds),
+            distanceMeters: split.distanceMeters,
+            avgHeartRate: split.avgHeartRate
+        )
+    }
+
+    /// Round heart rate lives on `RoundLog`, but the rows are driven by the
+    /// derived throughputs, so look it up by round number rather than assuming
+    /// the two collections are ordered alike.
+    private func avgHeartRate(forRound number: Int) -> Int? {
+        session.roundLogs.first { $0.roundNumber == number }?.avgHeartRate
+    }
+
     private var splitsSection: some View {
         let maxDuration = max(run1?.durationSeconds ?? 0, run2?.durationSeconds ?? 0, 1)
         return VStack(alignment: .leading, spacing: 0) {
             MurphSectionHeader("Splits")
             if let run1 {
-                MurphSplitRow(label: "Run 1", value: formatDuration(run1.durationSeconds), fraction: run1.durationSeconds / maxDuration, tone: .accent)
+                MurphSplitRow(label: "Run 1", value: splitValue(run1), fraction: run1.durationSeconds / maxDuration, tone: .accent)
             }
             if let run2 {
-                MurphSplitRow(label: "Run 2", value: formatDuration(run2.durationSeconds), fraction: run2.durationSeconds / maxDuration, tone: .accent)
+                MurphSplitRow(label: "Run 2", value: splitValue(run2), fraction: run2.durationSeconds / maxDuration, tone: .accent)
             }
         }
     }
@@ -185,7 +203,10 @@ struct SessionDetailView: View {
             ForEach(Array(roundThroughputs.enumerated()), id: \.offset) { index, round in
                 MurphSplitRow(
                     label: "Round \(String(format: "%02d", index + 1))",
-                    value: "\(round.secondsForRound)s",
+                    value: SessionDetailValue.round(
+                        duration: "\(round.secondsForRound)s",
+                        avgHeartRate: avgHeartRate(forRound: index + 1)
+                    ),
                     fraction: Double(round.secondsForRound) / maxSplit
                 )
             }
