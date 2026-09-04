@@ -4,6 +4,14 @@ import SwiftData
 
 @Model
 final class MurphSession {
+    var id: UUID = UUID()
+    var originRaw: String = SessionOrigin.phone.rawValue
+    /// The received journal, heart-rate events stripped. Kept so a session can
+    /// be re-derived if aggregation changes.
+    var journalData: Data?
+    /// Highest applied checkpoint. Meaningful only for received sessions;
+    /// stays 0 for phone-owned ones.
+    var lastCheckpointSeq: Int = 0
     var date: Date = Date.distantPast
     var template: WorkoutTemplate?
     var vestOn: Bool = false
@@ -62,6 +70,11 @@ final class MurphSession {
     var phase: SessionPhase {
         get { SessionPhase(rawValue: phaseRaw) ?? .notStarted }
         set { phaseRaw = newValue.rawValue }
+    }
+
+    var origin: SessionOrigin {
+        get { SessionOrigin(rawValue: originRaw) ?? .phone }
+        set { originRaw = newValue.rawValue }
     }
 
     var totalElapsedSeconds: Double? {

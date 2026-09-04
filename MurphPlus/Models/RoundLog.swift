@@ -11,6 +11,8 @@ final class RoundLog {
     /// the round's effective duration. Stored rather than derived so a relaunch
     /// mid-session cannot lose the correction.
     var pausedSecondsInRound: Double = 0
+    var avgHeartRate: Int?
+    var maxHeartRate: Int?
 
     init(roundNumber: Int, completedAt: Date, session: MurphSession? = nil) {
         self.roundNumber = roundNumber

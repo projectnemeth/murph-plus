@@ -21,6 +21,10 @@ struct MurphPlusApp: App {
         // unconditionally because it is self-healing — it acts only on ids that
         // are genuinely duplicated.
         DuplicateTemplateIdentityRepair.repair(context: container.mainContext)
+        // Must run before any importer can execute: `SessionImporter` fetches
+        // a session by id, and a store with duplicated session ids would let
+        // the first arriving checkpoint overwrite an arbitrary old workout.
+        DuplicateSessionIdentityRepair.repair(context: container.mainContext)
     }
 
     var body: some Scene {
