@@ -2,6 +2,9 @@
 // Wrapping row layout for badge groups (CSS `flexWrap: wrap` in the source
 // design system) — an HStack alone truncates when badges don't all fit.
 import SwiftUI
+#if os(watchOS)
+import WatchKit
+#endif
 
 private struct FlowLayoutEngine: Layout {
     var spacing: CGFloat
@@ -69,7 +72,20 @@ private struct FlowLayoutEngine: Layout {
 /// width minus whatever gutters/padding wrap this flow).
 enum MurphFlowWidth {
     /// Available width for badges laid directly under the screen gutter.
-    static var screen: CGFloat { UIScreen.main.bounds.width - 2 * MurphSpacing.gutterScreen }
+    /// `UIScreen` is unavailable on watchOS (it's marked `API_UNAVAILABLE`
+    /// even though the header is importable), so the watch side reads the
+    /// same measurement through `WKInterfaceDevice` instead. This property
+    /// is only ever consumed by the phone-sized badge components under
+    /// `DesignSystem/Components`, which the watch target does not build —
+    /// but the declaration still has to type-check there since this file
+    /// lives in the shared `Foundations` sources.
+    static var screen: CGFloat {
+        #if os(watchOS)
+        WKInterfaceDevice.current().screenBounds.width - 2 * MurphSpacing.gutterScreen
+        #else
+        UIScreen.main.bounds.width - 2 * MurphSpacing.gutterScreen
+        #endif
+    }
     /// Available width for badges inside a `MurphCard` under the screen gutter.
     static var card: CGFloat { screen - 2 * MurphSpacing.space4 }
 }

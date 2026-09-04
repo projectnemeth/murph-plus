@@ -29,6 +29,45 @@ targets:
           - ArchivoBlack-Regular.ttf
           - DMSans-Variable.ttf
           - MartianMono-Variable.ttf
+    dependencies:
+      - target: MurphPlusWatch
+        embed: true
+        copy:
+          destination: productsDirectory
+          subpath: "$(CONTENTS_FOLDER_PATH)/Watch"
+  MurphPlusWatch:
+    type: application
+    platform: watchOS
+    deploymentTarget: "10.0"
+    sources:
+      - MurphPlusWatch
+      - MurphCore
+      - path: MurphPlus/DesignSystem/Foundations
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.projectnemeth.MurphPlus.watchkitapp
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "4"
+        # No provisioning profile exists yet for this bundle ID (real device
+        # deployment is set up later, in Xcode, once there is UI to run).
+        # Disabling signing lets `xcodebuild build -destination generic/...`
+        # verify the target compiles without a profile in the loop.
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        GENERATE_INFOPLIST_FILE: true
+        INFOPLIST_KEY_CFBundleDisplayName: "Murph+"
+        INFOPLIST_KEY_WKApplication: true
+        INFOPLIST_KEY_WKCompanionAppBundleIdentifier: com.projectnemeth.MurphPlus
+        INFOPLIST_KEY_NSHealthShareUsageDescription: "Murph+ reads your heart rate and distance during a workout so your session records what your body actually did."
+        INFOPLIST_KEY_NSHealthUpdateUsageDescription: "Murph+ saves your Murph as a workout so it counts toward your Activity rings."
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Murph+ uses location during the two runs to measure distance and pace. Choose Indoor at setup to skip this."
+    info:
+      path: MurphPlusWatch/Info.plist
+      properties:
+        UIAppFonts:
+          - ArchivoBlack-Regular.ttf
+          - DMSans-Variable.ttf
+          - MartianMono-Variable.ttf
   MurphPlusTests:
     type: bundle.unit-test
     platform: iOS
@@ -54,5 +93,11 @@ schemes:
     test:
       targets:
         - MurphPlusTests
+    run:
+      config: Debug
+  MurphPlusWatch:
+    build:
+      targets:
+        MurphPlusWatch: all
     run:
       config: Debug
