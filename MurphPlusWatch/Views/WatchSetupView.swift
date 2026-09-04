@@ -19,6 +19,18 @@ struct WatchSetupView: View {
         let synced = sync.context?.templates ?? []
         return synced.isEmpty ? Self.starterTemplates : synced
     }
+
+    /// `templates` can change under the user: the phone's list replaces the
+    /// starters the moment context arrives. A `selected` that is no longer in
+    /// the list highlights no row while still being what Start launches, so
+    /// drop it and fall back to the first of whatever is current.
+    private var effectiveSelection: TemplateSpec? {
+        guard let selected, templates.contains(where: { $0.id == selected.id }) else {
+            return templates.first
+        }
+        return selected
+    }
+
     @State private var selected: TemplateSpec?
     @AppStorage("watchVestOn") private var vestOn = false
     @AppStorage("watchVestWeight") private var vestWeight = 20
@@ -62,7 +74,7 @@ struct WatchSetupView: View {
                     )
 
                     Button("Start") {
-                        guard let spec = selected ?? templates.first else { return }
+                        guard let spec = effectiveSelection else { return }
                         Task {
                             await controller.startSession(
                                 template: spec, vestOn: vestOn,
@@ -133,7 +145,7 @@ struct WatchSetupView: View {
     }
 
     private func templateRow(_ template: TemplateSpec) -> some View {
-        let isSelected = (selected ?? templates.first)?.id == template.id
+        let isSelected = effectiveSelection?.id == template.id
         return Button {
             selected = template
         } label: {
