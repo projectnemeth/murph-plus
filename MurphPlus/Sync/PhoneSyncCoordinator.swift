@@ -62,7 +62,7 @@ final class PhoneSyncCoordinator: NSObject {
         // The session has landed in history, so stop mirroring it — otherwise
         // the phone shows the finished workout twice, once live and once real.
         if SessionState.replay(payload.events).isTerminal {
-            mirror.clear()
+            mirror.markFinished(sessionID: payload.sessionID)
         }
     }
 }

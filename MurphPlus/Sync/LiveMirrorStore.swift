@@ -70,4 +70,17 @@ final class LiveMirrorStore {
         state = nil
         lastUpdate = nil
     }
+
+    /// The durable checkpoint channel also ends a session — via
+    /// `PhoneSyncCoordinator.ingest`, when an imported payload replays as
+    /// terminal. That channel is guaranteed, unlike the fire-and-forget live
+    /// channel whose own terminal event may never arrive. A session's end
+    /// must be recorded once no matter which channel observed it, or a
+    /// straggling event on the same id (heart rate keeps arriving after
+    /// `finish()`) would take the "different session" branch in `receive`
+    /// and reopen the mirror on a finished workout.
+    func markFinished(sessionID: UUID) {
+        finished.insert(sessionID)
+        clear()
+    }
 }

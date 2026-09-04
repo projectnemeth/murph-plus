@@ -138,4 +138,40 @@ final class LiveMirrorStoreTests: XCTestCase {
         XCTAssertTrue(store.isMirroring)
         XCTAssertEqual(store.sessionID, second)
     }
+
+    /// `PhoneSyncCoordinator.ingest` also ends a session — via the durable
+    /// checkpoint channel, which is guaranteed, unlike the fire-and-forget
+    /// live channel whose own terminal event may have been dropped. That path
+    /// must record the id as finished too, or a heart-rate straggler on the
+    /// same id reopens the mirror through this second door.
+    func test_aSessionEndedByMarkFinishedCannotBeReopenedByALaterEvent() {
+        let store = LiveMirrorStore()
+        let id = UUID()
+        store.receive(sessionID: id, event: started(t(0)))
+
+        store.markFinished(sessionID: id)
+
+        XCTAssertNil(store.state)
+        XCTAssertFalse(store.isMirroring)
+
+        store.receive(sessionID: id, event: .heartRate(bpm: 140, at: t(61)))
+
+        XCTAssertNil(store.state, "A session ended via markFinished must stay finished")
+        XCTAssertFalse(store.isMirroring)
+    }
+
+    /// A genuinely new session id must still be able to start mirroring after
+    /// a prior one was ended via `markFinished`.
+    func test_aNewSessionAfterMarkFinishedStillMirrors() {
+        let store = LiveMirrorStore()
+        let first = UUID()
+        store.receive(sessionID: first, event: started(t(0)))
+        store.markFinished(sessionID: first)
+
+        let second = UUID()
+        store.receive(sessionID: second, event: started(t(100)))
+
+        XCTAssertTrue(store.isMirroring)
+        XCTAssertEqual(store.sessionID, second)
+    }
 }
