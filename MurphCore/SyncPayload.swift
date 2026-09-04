@@ -20,6 +20,11 @@ struct SyncPayload: Codable, Equatable {
     var origin: SessionOrigin
     var events: [SessionEvent]
 
+    /// WatchConnectivity's documented ceiling for `transferUserInfo`. Payloads
+    /// at or above this go by file transfer instead — same queued, guaranteed
+    /// delivery, no size limit.
+    static let userInfoByteLimit = 65_536
+
     /// Heart-rate events are bulky (~700 per long session), already aggregated
     /// into per-segment summaries, and their raw form lives in HealthKit. The
     /// phone stores the journal without them.

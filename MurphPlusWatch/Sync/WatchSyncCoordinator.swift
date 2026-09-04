@@ -47,6 +47,17 @@ final class WatchSyncCoordinator: NSObject, SessionTransport {
     /// device. This is the channel the session's durability rests on.
     func transferCheckpoint(_ payload: SyncPayload) {
         guard WCSession.isSupported(), let data = try? JSONEncoder().encode(payload) else { return }
+
+        guard data.count < SyncPayload.userInfoByteLimit else {
+            // Same guarantee, no ceiling. The oversize case is the *final*
+            // checkpoint of a long workout — the one that marks it complete —
+            // so dropping it would lose the whole session on the phone.
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("checkpoint-\(payload.sessionID)-\(payload.checkpointSeq).json")
+            guard (try? data.write(to: url)) != nil else { return }
+            WCSession.default.transferFile(url, metadata: nil)
+            return
+        }
         WCSession.default.transferUserInfo([SyncKey.payload: data])
     }
 
@@ -81,5 +92,28 @@ extension WatchSyncCoordinator: WCSessionDelegate {
             self.context = decoded
             self.onContext?(decoded)
         }
+    }
+
+    /// Was silent before: an oversize or rejected transfer simply vanished,
+    /// and the payload most likely to be oversize is the one that completes
+    /// the session.
+    nonisolated func session(
+        _ session: WCSession, didFinish userInfoTransfer: WCSessionUserInfoTransfer, error: Error?
+    ) {
+        guard let error else { return }
+        NSLog("MurphPlus sync: userInfo transfer failed — \(error.localizedDescription)")
+    }
+
+    /// WatchConnectivity takes its own copy of the file when the transfer is
+    /// handed off; ours is scratch space that must be cleaned up here, whether
+    /// or not the transfer succeeded, or it accumulates one file per oversize
+    /// checkpoint.
+    nonisolated func session(
+        _ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?
+    ) {
+        if let error {
+            NSLog("MurphPlus sync: file transfer failed — \(error.localizedDescription)")
+        }
+        try? FileManager.default.removeItem(at: fileTransfer.file.fileURL)
     }
 }

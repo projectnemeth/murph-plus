@@ -74,6 +74,34 @@ final class SyncPayloadTests: XCTestCase {
         XCTAssertEqual(SessionState.replay(stripped.events).phase, .rounds)
     }
 
+    /// Every checkpoint carries the whole journal, heart-rate samples
+    /// included. An encoded `.heartRate` event costs about 41 bytes, so the
+    /// 65,536-byte `transferUserInfo` ceiling is crossed somewhere around
+    /// 1,600 samples — roughly 2h13m of sampling at one per five seconds.
+    /// This test sits deliberately past that, at 1,800 samples (2.5 hours),
+    /// so it isn't sitting within a percent of the boundary and flipping to
+    /// failing the first time a field is added to or removed from
+    /// `SessionEvent`'s encoding for reasons unrelated to the behavior under
+    /// test. `transferUserInfo` fails silently past its ceiling — on the
+    /// final checkpoint, the one that marks the session complete.
+    func test_aLongSessionsPayloadExceedsTheUserInfoLimit() throws {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        var events: [SessionEvent] = [
+            .started(at: start, template: spec, vestOn: false, vestWeightLbs: nil, indoor: false)
+        ]
+        for i in 0..<1_800 {     // 2.5 hours at one sample per five seconds
+            events.append(.heartRate(bpm: 140, at: start.addingTimeInterval(Double(i) * 5)))
+        }
+        let payload = SyncPayload(sessionID: UUID(), checkpointSeq: 1, origin: .watch, events: events)
+
+        let encoded = try JSONEncoder().encode(payload)
+
+        XCTAssertGreaterThan(
+            encoded.count, SyncPayload.userInfoByteLimit,
+            "This is the case that must take the file transfer path"
+        )
+    }
+
     func test_syncContextRoundTrips() throws {
         let context = SyncContext(
             templates: [spec],

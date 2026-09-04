@@ -94,6 +94,15 @@ extension PhoneSyncCoordinator: WCSessionDelegate {
         Task { @MainActor in self.ingest(data) }
     }
 
+    /// The large-payload counterpart of `didReceiveUserInfo`. A `WCSessionFile`'s
+    /// URL is only valid until this method returns — the system deletes it right
+    /// after — so the read must happen synchronously here, before hopping to
+    /// the main actor.
+    nonisolated func session(_ session: WCSession, didReceive file: WCSessionFile) {
+        guard let data = try? Data(contentsOf: file.fileURL) else { return }
+        Task { @MainActor in self.ingest(data) }
+    }
+
     /// Live mirror. Rendered and forgotten — never persisted.
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
         guard
