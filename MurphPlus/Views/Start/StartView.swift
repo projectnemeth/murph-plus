@@ -11,6 +11,8 @@ struct StartView: View {
 
     let onBegin: (WorkoutTemplate, Bool, Int?) -> Void
 
+    @Environment(PhoneSyncCoordinator.self) private var sync
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -21,18 +23,34 @@ struct StartView: View {
                         workoutSection
                         vestSection
 
-                        MurphButton(
-                            variant: .primary,
-                            size: .lg,
-                            full: true,
-                            icon: Image(systemName: "play.fill"),
-                            title: "Begin"
-                        ) {
-                            guard let selectedTemplate else { return }
-                            let weight = vestOn ? Int(vestWeightText) : nil
-                            onBegin(selectedTemplate, vestOn, weight)
+                        if sync.mirror.isMirroring {
+                            // Never offer Start while the Watch owns a
+                            // session. Two live sessions is the one conflict
+                            // this design refuses to resolve, so the guard is
+                            // to make it unreachable rather than to merge it
+                            // afterwards.
+                            NavigationLink {
+                                MirroredSessionView(mirror: sync.mirror)
+                            } label: {
+                                MurphBanner(
+                                    tone: .info,
+                                    text: "Session running on Apple Watch · Tap to follow along"
+                                )
+                            }
+                        } else {
+                            MurphButton(
+                                variant: .primary,
+                                size: .lg,
+                                full: true,
+                                icon: Image(systemName: "play.fill"),
+                                title: "Begin"
+                            ) {
+                                guard let selectedTemplate else { return }
+                                let weight = vestOn ? Int(vestWeightText) : nil
+                                onBegin(selectedTemplate, vestOn, weight)
+                            }
+                            .disabled(selectedTemplate == nil)
                         }
-                        .disabled(selectedTemplate == nil)
                     }
                     .padding(.horizontal, MurphSpacing.gutterScreen)
                     .padding(.bottom, MurphSpacing.space8)
