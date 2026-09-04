@@ -45,8 +45,21 @@ final class WatchSyncCoordinator: NSObject, SessionTransport {
 
     /// Queued and guaranteed: survives app termination, and reboot of either
     /// device. This is the channel the session's durability rests on.
+    ///
+    /// `activationState` is part of the guard, matching `PhoneSyncCoordinator`.
+    /// `activate()` is called in `init` but completes asynchronously through the
+    /// delegate, so a user who launches the Watch app and taps Start inside that
+    /// window — ordinary on a cold launch — would otherwise reach
+    /// `transferUserInfo` on a session that is still `.notActivated`. Apple's
+    /// contract is to activate and wait; the documented behaviour is an
+    /// exception, and the benign reading still silently loses the session's
+    /// *first* checkpoint.
     func transferCheckpoint(_ payload: SyncPayload) {
-        guard WCSession.isSupported(), let data = try? JSONEncoder().encode(payload) else { return }
+        guard
+            WCSession.isSupported(),
+            WCSession.default.activationState == .activated,
+            let data = try? JSONEncoder().encode(payload)
+        else { return }
 
         guard data.count < SyncPayload.userInfoByteLimit else {
             // Same guarantee, no ceiling. The oversize case is the *final*
