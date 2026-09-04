@@ -53,9 +53,12 @@ rep totals already divide perfectly into 5/10/15 sets:
 | Half Murph | 50 / 100 / 150 | **10** | 5 / 10 / 15 |
 | Mini Murph | 25 / 50 / 75 | **5** | 5 / 10 / 15 |
 
-Names gain their round count, matching the convention the Full templates
-already use (`Full Murph (Cindy-Style, 20 Rounds)`): **`Half Murph (10
-Rounds)`** and **`Mini Murph (5 Rounds)`**.
+**Names stay exactly as they are** — `Half Murph` and `Mini Murph`. Only
+`rounds` changes. This diverges from the Full templates' convention of naming
+the style (`Full Murph (Cindy-Style, 20 Rounds)`), which is a deliberate
+accepted inconsistency: the round count is already visible on the template row
+and in the editor, and renaming a template a user may have grown used to is a
+more intrusive migration than correcting a number.
 
 ### The migration is the real work here
 
@@ -117,7 +120,8 @@ should read **`Murph+`** — the app's name, not an instruction.
 The seed migration is the only piece with logic worth unit testing, and it is
 the piece most likely to go wrong:
 
-- an untouched default Half/Mini template is corrected (rounds and name)
+- an untouched default Half/Mini template has its `rounds` corrected, and its
+  name, reps, and run distance left byte-identical
 - a user-edited template matching on name but differing in reps, distance, or
   rounds is left completely alone
 - the migration is idempotent and does not re-run once flagged
