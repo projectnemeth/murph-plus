@@ -51,8 +51,19 @@ struct LiveSessionView: View {
             .murphNavBar(title: "Live session")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    MurphIconButton(label: "Close", systemImage: "xmark", disabled: phase != .completed) {
-                        onFinished()
+                    // One slot, two phases. During a session it carries Abandon,
+                    // which keeps the destructive action out of the thumb zone
+                    // under "Round Done". At completion it becomes Close.
+                    // Previously this held a Close button that was disabled —
+                    // and so visibly inert — for the entire workout.
+                    if phase == .completed {
+                        MurphIconButton(label: "Close", systemImage: "xmark") {
+                            onFinished()
+                        }
+                    } else {
+                        MurphButton(variant: .danger, size: .sm, title: "Abandon") {
+                            showAbandonConfirm = true
+                        }
                     }
                 }
             }
@@ -112,11 +123,6 @@ struct LiveSessionView: View {
             VStack(spacing: MurphSpacing.space3) {
                 MurphButton(variant: .primary, size: .lg, full: true, icon: Image(systemName: copy.icon), title: copy.action) {
                     advance()
-                }
-                if phase != .completed {
-                    MurphButton(variant: .danger, full: true, title: "Abandon") {
-                        showAbandonConfirm = true
-                    }
                 }
             }
             .padding(.init(top: MurphSpacing.space4, leading: MurphSpacing.gutterScreen, bottom: MurphSpacing.space8, trailing: MurphSpacing.gutterScreen))

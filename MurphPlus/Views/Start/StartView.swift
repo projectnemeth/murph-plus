@@ -15,7 +15,7 @@ struct StartView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    MurphScreenTitle(title: "Start Murph")
+                    MurphScreenTitle(title: "Murph+")
 
                     VStack(alignment: .leading, spacing: MurphSpacing.gapSection) {
                         workoutSection
