@@ -126,4 +126,85 @@ final class DefaultTemplateMigrationTests: XCTestCase {
 
         XCTAssertTrue(defaults.bool(forKey: DefaultTemplateMigration.flagKey))
     }
+
+    /// All four seeded starter templates present at once. A future edit that
+    /// loosened or mistyped the name check in `corrections` should be caught
+    /// here even though it would leave the two-test, two-template suite green.
+    func test_onlyHalfAndMiniAreCorrected_bothFullMurphTemplatesUntouched() throws {
+        context.insert(WorkoutTemplate(
+            name: "Full Murph (Straight Sets)",
+            runDistanceMiles: 1.0,
+            totalPullUps: 100, totalPushUps: 200, totalSquats: 300,
+            rounds: 1
+        ))
+        context.insert(WorkoutTemplate(
+            name: "Full Murph (Cindy-Style, 20 Rounds)",
+            runDistanceMiles: 1.0,
+            totalPullUps: 100, totalPushUps: 200, totalSquats: 300,
+            rounds: 20
+        ))
+        insertShippedHalfMurph()
+        context.insert(WorkoutTemplate(
+            name: "Mini Murph",
+            runDistanceMiles: 0.25,
+            totalPullUps: 25, totalPushUps: 50, totalSquats: 75,
+            rounds: 1
+        ))
+
+        try DefaultTemplateMigration.runIfNeeded(context: context, defaults: defaults)
+
+        let straightSets = try XCTUnwrap(fetchTemplate(named: "Full Murph (Straight Sets)"))
+        let cindyStyle = try XCTUnwrap(fetchTemplate(named: "Full Murph (Cindy-Style, 20 Rounds)"))
+        let half = try XCTUnwrap(fetchTemplate(named: "Half Murph"))
+        let mini = try XCTUnwrap(fetchTemplate(named: "Mini Murph"))
+
+        XCTAssertEqual(straightSets.rounds, 1, "Full Murph straight sets must not be swept up by the Half/Mini correction")
+        XCTAssertEqual(cindyStyle.rounds, 20, "Full Murph Cindy-style must not be touched")
+        XCTAssertEqual(half.rounds, 10)
+        XCTAssertEqual(mini.rounds, 5)
+    }
+
+    /// The spec's stated fresh-install case: seeding directly produces the
+    /// corrected values, and running the migration afterward is a no-op.
+    func test_freshInstall_seedsCorrectedValuesDirectly_migrationIsNoOp() throws {
+        try DefaultTemplates.seedIfNeeded(context: context)
+
+        try DefaultTemplateMigration.runIfNeeded(context: context, defaults: defaults)
+
+        let half = try XCTUnwrap(fetchTemplate(named: "Half Murph"))
+        let mini = try XCTUnwrap(fetchTemplate(named: "Mini Murph"))
+        XCTAssertEqual(half.rounds, 10)
+        XCTAssertEqual(mini.rounds, 5)
+    }
+
+    func test_leavesUserEditedMiniMurphAlone() throws {
+        // Same name, but the user changed the pull-up count. Not ours to touch.
+        context.insert(WorkoutTemplate(
+            name: "Mini Murph",
+            runDistanceMiles: 0.25,
+            totalPullUps: 30, totalPushUps: 50, totalSquats: 75,
+            rounds: 1
+        ))
+
+        try DefaultTemplateMigration.runIfNeeded(context: context, defaults: defaults)
+
+        let mini = try XCTUnwrap(fetchTemplate(named: "Mini Murph"))
+        XCTAssertEqual(mini.rounds, 1, "An edited template must not be corrected")
+    }
+
+    func test_leavesTemplateEditedOnlyInDistanceAlone() throws {
+        // Reps are untouched, but the run distance was edited. Still not a
+        // byte-for-byte match with the shipped default, so leave it alone.
+        context.insert(WorkoutTemplate(
+            name: "Half Murph",
+            runDistanceMiles: 0.6,
+            totalPullUps: 50, totalPushUps: 100, totalSquats: 150,
+            rounds: 1
+        ))
+
+        try DefaultTemplateMigration.runIfNeeded(context: context, defaults: defaults)
+
+        let half = try XCTUnwrap(fetchTemplate(named: "Half Murph"))
+        XCTAssertEqual(half.rounds, 1, "A template edited only in run distance must not be corrected")
+    }
 }

@@ -19,6 +19,12 @@ enum SessionProgressDescriber {
         totalRounds: Int,
         repsPerRound: Int
     ) -> String? {
+        // A session whose template has gone missing (nullified, e.g. once
+        // CloudKit sync can race a session ahead of its template) has no
+        // round structure left to describe. Inventing "of 0" is worse than
+        // saying nothing, so bail before the switch touches totalRounds.
+        guard totalRounds > 0 else { return nil }
+
         switch phase {
         case .completed:
             return nil
@@ -42,12 +48,16 @@ enum SessionProgressDescriber {
         roundsCompleted: Int,
         totalRounds: Int
     ) -> String? {
+        // See describe(...) above: with no template there's no round
+        // structure to summarize, so don't fabricate one.
+        guard totalRounds > 0 else { return nil }
+
         switch phase {
         case .completed: return nil
         case .notStarted: return "Not started"
-        case .run1: return "Run 1"
+        case .run1: return "Quit in run 1"
         case .rounds: return "\(roundsCompleted)/\(totalRounds) rounds"
-        case .run2: return "Run 2"
+        case .run2: return "Quit in run 2"
         }
     }
 }

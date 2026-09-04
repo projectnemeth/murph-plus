@@ -61,9 +61,15 @@ struct LiveSessionView: View {
                             onFinished()
                         }
                     } else {
+                        // .sm renders 36pt tall, under MurphSpacing.tapMin (44pt).
+                        // Keep the small visual (a .md danger button here would
+                        // read as oversized chrome in a nav bar) but pad the tap
+                        // target out to the minimum, since this is the only
+                        // danger-variant control in the app below that minimum.
                         MurphButton(variant: .danger, size: .sm, title: "Abandon") {
                             showAbandonConfirm = true
                         }
+                        .frame(minHeight: MurphSpacing.tapMin)
                     }
                 }
             }

@@ -55,6 +55,17 @@ final class SessionProgressDescriberTests: XCTestCase {
         XCTAssertEqual(text, "Stopped during rounds · 0 of 1 · 0 of 600 reps")
     }
 
+    func test_describe_missingTemplateIsNil() {
+        // totalRounds == 0 means the session's template has gone missing
+        // (nullified). There's no round structure to describe, in any phase.
+        XCTAssertNil(SessionProgressDescriber.describe(
+            phase: .rounds, roundsCompleted: 15, totalRounds: 0, repsPerRound: 30
+        ))
+        XCTAssertNil(SessionProgressDescriber.describe(
+            phase: .run2, roundsCompleted: 0, totalRounds: 0, repsPerRound: 30
+        ))
+    }
+
     // MARK: - Short form (history row)
 
     func test_shortDescription_midRounds() {
@@ -67,11 +78,11 @@ final class SessionProgressDescriberTests: XCTestCase {
     func test_shortDescription_duringRuns() {
         XCTAssertEqual(
             SessionProgressDescriber.shortDescription(phase: .run1, roundsCompleted: 0, totalRounds: 20),
-            "Run 1"
+            "Quit in run 1"
         )
         XCTAssertEqual(
             SessionProgressDescriber.shortDescription(phase: .run2, roundsCompleted: 20, totalRounds: 20),
-            "Run 2"
+            "Quit in run 2"
         )
     }
 
@@ -79,5 +90,11 @@ final class SessionProgressDescriberTests: XCTestCase {
         XCTAssertNil(
             SessionProgressDescriber.shortDescription(phase: .completed, roundsCompleted: 20, totalRounds: 20)
         )
+    }
+
+    func test_shortDescription_missingTemplateIsNil() {
+        XCTAssertNil(SessionProgressDescriber.shortDescription(
+            phase: .rounds, roundsCompleted: 15, totalRounds: 0
+        ))
     }
 }
