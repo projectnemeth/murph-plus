@@ -90,6 +90,40 @@ final class WorkoutSessionController: NSObject {
         }
     }
 
+    /// Reattaches to an `HKWorkoutSession` watchOS kept alive across an app
+    /// relaunch (the process was killed mid-workout, but the session — a
+    /// system-owned resource — was not). Only the session itself survives:
+    /// the builder's delegate and data source are this process's objects and
+    /// must be rebuilt from scratch, same as a fresh `start(indoor:)`.
+    ///
+    /// Returns `false` if there was nothing to recover, or recovery threw —
+    /// either way the caller should fall back to `start(indoor:)` for the
+    /// remainder of the workout. A second `HKWorkout` in Fitness is a much
+    /// smaller loss than an hour of unrecorded heart rate.
+    func recover(indoor: Bool) async -> Bool {
+        guard HKHealthStore.isHealthDataAvailable() else { return false }
+        do {
+            guard let session = try await healthStore.recoverActiveWorkoutSession() else {
+                return false
+            }
+            let configuration = HKWorkoutConfiguration()
+            configuration.activityType = .crossTraining
+            configuration.locationType = indoor ? .indoor : .outdoor
+
+            let builder = session.associatedWorkoutBuilder()
+            builder.dataSource = HKLiveWorkoutDataSource(
+                healthStore: healthStore, workoutConfiguration: configuration
+            )
+            builder.delegate = self
+
+            self.session = session
+            self.builder = builder
+            return true
+        } catch {
+            return false
+        }
+    }
+
     func beginRunActivity() {
         distanceAtRunStart = currentTotalDistance()
         isInRunActivity = true

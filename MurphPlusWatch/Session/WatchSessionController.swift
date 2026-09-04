@@ -26,6 +26,12 @@ final class WatchSessionController {
     var isFinished: Bool { state.isTerminal }
     var canUndo: Bool { state.undoableRoundNumber != nil }
 
+    /// Set when a journal append throws. The event still applied to `state`
+    /// in that case — see `record(_:)` — so this is purely a signal for a
+    /// later task to warn the user that this session's on-disk record (and,
+    /// in a later stage, the sync payload it becomes) may be incomplete.
+    private(set) var journalWriteFailed = false
+
     var elapsed: TimeInterval { SessionDerivation.elapsed(state, now: .now) }
 
     // MARK: - Lifecycle
@@ -35,12 +41,40 @@ final class WatchSessionController {
     }
 
     /// Returns true if an unfinished journal was found and restored.
-    func resumeExistingSession() throws -> Bool {
+    ///
+    /// Restoring the journal is not enough on its own: a relaunch means
+    /// `workout` is a brand-new `WorkoutSessionController` with no session,
+    /// no builder, and no heart-rate handler, even though the workout is
+    /// still live on the Watch's side. Reattach HealthKit the same way
+    /// `startSession` does, then issue whatever activity segment matches the
+    /// phase the journal replayed into — otherwise a resumed session quietly
+    /// stops recording heart rate for the rest of the workout.
+    func resumeExistingSession() async throws -> Bool {
         guard let found = try SessionJournal.resumable(in: Self.journalDirectory) else {
             return false
         }
         journal = found
         state = found.state
+
+        // Prefer reattaching to the still-live session watchOS kept running;
+        // fall back to a fresh one if there is nothing to recover (or
+        // recovery fails) — a second `HKWorkout` in Fitness is a much
+        // smaller loss than an hour of unrecorded heart rate.
+        let recovered = await workout.recover(indoor: state.indoor)
+        if !recovered {
+            await workout.start(indoor: state.indoor)
+        }
+        attachHeartRateHandler()
+
+        switch state.phase {
+        case .run1, .run2:
+            workout.beginRunActivity()
+        case .rounds:
+            workout.beginRoundsActivity()
+        case .notStarted, .completed:
+            break
+        }
+
         return true
     }
 
@@ -49,21 +83,26 @@ final class WatchSessionController {
         self.journal = journal
 
         await workout.start(indoor: indoor)
-        workout.onHeartRate = { [weak self] bpm in
-            // Ruling 3: a hardware spike to confirm whether
-            // `HKWorkoutSession.pause()` actually suspends heart-rate delivery
-            // was skipped — don't trust it to. Dropping samples taken while
-            // paused keeps a stopped-still spike from being bucketed into the
-            // surrounding round and dragging its average down.
-            guard let self, !self.state.isPaused else { return }
-            self.record(.heartRate(bpm: bpm, at: .now))
-        }
+        attachHeartRateHandler()
 
         perform(SessionStateMachine.start(
             state, template: template, vestOn: vestOn,
             vestWeightLbs: vestWeightLbs, indoor: indoor, now: .now
         ))
         workout.beginRunActivity()
+    }
+
+    /// Ruling 3: a hardware spike to confirm whether `HKWorkoutSession.pause()`
+    /// actually suspends heart-rate delivery was skipped — don't trust it to.
+    /// Dropping samples taken while paused keeps a stopped-still spike from
+    /// being bucketed into the surrounding round and dragging its average
+    /// down. Shared by `startSession` and `resumeExistingSession`, which both
+    /// need to (re)attach this handler to a freshly (re)created `workout`.
+    private func attachHeartRateHandler() {
+        workout.onHeartRate = { [weak self] bpm in
+            guard let self, !self.state.isPaused else { return }
+            self.record(.heartRate(bpm: bpm, at: .now))
+        }
     }
 
     // MARK: - Transitions
@@ -144,7 +183,19 @@ final class WatchSessionController {
     }
 
     private func record(_ event: SessionEvent) {
-        try? journal?.append(event)
+        // The user really did do this — a round tap, a pause, a run finish —
+        // so `state` applies the event regardless of whether the journal
+        // write succeeds. Refusing to count it in memory over a durability
+        // gap would be a worse failure than the gap itself. But the failure
+        // must not vanish silently: this journal is a later stage's sync
+        // payload, so a swallowed append is permanent, invisible data loss.
+        // Surface it instead via `journalWriteFailed`, which a later task
+        // surfaces to the user.
+        do {
+            try journal?.append(event)
+        } catch {
+            journalWriteFailed = true
+        }
         state.apply(event)
     }
 }
