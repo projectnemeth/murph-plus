@@ -79,8 +79,23 @@ final class SessionEngine {
         save()
     }
 
+    /// Abandoning a session that was never started discards it instead of
+    /// recording it. Nothing was logged against it — no runs, no rounds, no
+    /// elapsed time — so keeping it would add an "attempt" to the history that
+    /// represents no attempt at all. This is the same rule
+    /// `NeverStartedSessionPurger` applies to rows stranded by an app kill.
+    ///
+    /// A session that *did* start is always kept, however little it recorded:
+    /// that is a real attempt, and the log is the record of it.
     func abandon() {
         guard !isTerminal else { return }
+
+        guard session.startedAt != nil else {
+            context.delete(session)
+            save()
+            return
+        }
+
         session.status = .abandoned
         session.completedAt = .now
         session.currentPhaseStartedAt = nil

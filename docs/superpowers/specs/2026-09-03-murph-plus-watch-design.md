@@ -119,6 +119,15 @@ that just advanced the session into run 2, which reverts to the rounds phase
 and discards the run-2 start — while making it impossible to unwind history
 further back.
 
+**A never-started session is not an attempt.** If `abandoned` arrives with no
+preceding `started`, the session is discarded rather than recorded — no
+`MurphSession`, no history row, nothing counted toward Attempts. The phone
+adopted this rule after the v1 fix batch (`SessionEngine.abandon()` and
+`NeverStartedSessionPurger`), and the Watch must match it: the journal is
+deleted rather than checkpointed, and `SessionImporter` ignores such a payload
+if one arrives anyway. Without this the Watch would sync back exactly the
+records the phone refuses to keep.
+
 **Timestamps always come from the owning device**, and the receiving device
 never restamps on receipt. Because every duration is a difference between two
 timestamps from the same device's clock, clock skew between watch and phone

@@ -24,6 +24,10 @@ struct LiveSessionView: View {
 
     private var session: MurphSession { engine.session }
     private var phase: SessionPhase { session.phase }
+
+    /// Begin was tapped but Start Run 1 never was — nothing is recorded, so
+    /// leaving here discards rather than logs.
+    private var neverStarted: Bool { session.startedAt == nil }
     private var copy: PhaseCopy { phaseCopy[phase] ?? phaseCopy[.notStarted]! }
 
     var body: some View {
@@ -32,14 +36,21 @@ struct LiveSessionView: View {
                 content
                 if showAbandonConfirm {
                     MurphDialog(
-                        title: "Abandon this session?",
-                        body: "It stays in your history, flagged incomplete.",
+                        title: neverStarted ? "Discard this session?" : "Abandon this session?",
+                        body: neverStarted
+                            ? "Nothing has been recorded yet, so it won't be logged as an attempt."
+                            : "It stays in your history, flagged incomplete.",
                         onDismiss: { showAbandonConfirm = false }
                     ) {
-                        MurphButton(variant: .danger, full: true, title: "Abandon") {
+                        MurphButton(variant: .danger, full: true, title: neverStarted ? "Discard" : "Abandon") {
                             showAbandonConfirm = false
-                            engine.abandon()
+                            // Dismiss BEFORE mutating: a never-started session is
+                            // deleted by `abandon()`, and this view is bound to it,
+                            // so deleting first can leave a body evaluation reading
+                            // a deleted model. Same ordering as the delete path in
+                            // SessionDetailView.
                             onFinished()
+                            engine.abandon()
                         }
                         MurphButton(variant: .secondary, full: true, title: "Keep going") {
                             showAbandonConfirm = false
@@ -66,7 +77,11 @@ struct LiveSessionView: View {
                         // read as oversized chrome in a nav bar) but pad the tap
                         // target out to the minimum, since this is the only
                         // danger-variant control in the app below that minimum.
-                        MurphButton(variant: .danger, size: .sm, title: "Abandon") {
+                        // "Cancel" before the clock starts, "Abandon" after: the
+                        // pre-start action discards an empty session rather than
+                        // logging an attempt, and calling that "Abandon" would
+                        // look like the record went missing.
+                        MurphButton(variant: .danger, size: .sm, title: neverStarted ? "Cancel" : "Abandon") {
                             showAbandonConfirm = true
                         }
                         .frame(minHeight: MurphSpacing.tapMin)

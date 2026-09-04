@@ -115,6 +115,38 @@ final class SessionEngineTests: XCTestCase {
         XCTAssertEqual(engine.session.completedAt, completedAt)
     }
 
+    private func allSessions() throws -> [MurphSession] {
+        try context.fetch(FetchDescriptor<MurphSession>())
+    }
+
+    func test_abandon_beforeStarting_discardsTheSessionEntirely() throws {
+        let template = makeTemplate(rounds: 3)
+        let engine = SessionEngine.startNew(template: template, vestOn: false, vestWeightLbs: nil, context: context)
+        XCTAssertEqual(try allSessions().count, 1)
+
+        // Never tapped Start: nothing was recorded, so this is not an attempt.
+        engine.abandon()
+
+        XCTAssertTrue(try allSessions().isEmpty, "A never-started session must leave no record")
+    }
+
+    func test_abandon_afterStarting_keepsTheRecordWithItsLoggedData() throws {
+        let template = makeTemplate(rounds: 3)
+        let engine = SessionEngine.startNew(template: template, vestOn: false, vestWeightLbs: nil, context: context)
+        engine.start()
+        engine.finishRun()
+        engine.completeRound()
+
+        engine.abandon()
+
+        let sessions = try allSessions()
+        XCTAssertEqual(sessions.count, 1, "A started session stays in history even when abandoned")
+        XCTAssertEqual(sessions[0].status, .abandoned)
+        XCTAssertEqual(sessions[0].completedRounds, 1)
+        XCTAssertEqual(sessions[0].runSplits.count, 1)
+        XCTAssertNotNil(sessions[0].completedAt)
+    }
+
     func test_invalidPhaseTransitionsAreIgnored() {
         let template = makeTemplate(rounds: 2)
         let engine = SessionEngine.startNew(template: template, vestOn: false, vestWeightLbs: nil, context: context)

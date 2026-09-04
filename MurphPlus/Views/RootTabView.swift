@@ -61,26 +61,8 @@ struct RootTabView: View {
             .interactiveDismissDisabled()
         }
         .task {
-            purgeNeverStartedSessions()
+            NeverStartedSessionPurger.purge(context: context)
             resumableSession = ResumableSessionFinder.findInProgress(context: context)
         }
-    }
-
-    /// `startNew` persists a session the moment "Begin" is tapped, before the
-    /// user taps "Start Run 1". An app kill in that window leaves a row that is
-    /// .inProgress with no startedAt: the resume finder skips it by design, and
-    /// both history surfaces filter .inProgress out — so it would linger
-    /// invisible and non-terminal forever. Nothing was ever recorded against
-    /// it, so deleting is safe and loses nothing.
-    private func purgeNeverStartedSessions() {
-        let inProgressRaw = SessionStatus.inProgress.rawValue
-        let descriptor = FetchDescriptor<MurphSession>(
-            predicate: #Predicate { $0.statusRaw == inProgressRaw }
-        )
-        guard let candidates = try? context.fetch(descriptor) else { return }
-        for session in candidates where session.startedAt == nil {
-            context.delete(session)
-        }
-        try? context.save()
     }
 }
