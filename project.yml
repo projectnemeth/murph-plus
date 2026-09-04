@@ -48,12 +48,6 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.projectnemeth.MurphPlus.watchkitapp
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "4"
-        # No provisioning profile exists yet for this bundle ID (real device
-        # deployment is set up later, in Xcode, once there is UI to run).
-        # Disabling signing lets `xcodebuild build -destination generic/...`
-        # verify the target compiles without a profile in the loop.
-        CODE_SIGNING_ALLOWED: NO
-        CODE_SIGNING_REQUIRED: NO
         GENERATE_INFOPLIST_FILE: true
         INFOPLIST_KEY_CFBundleDisplayName: "Murph+"
         INFOPLIST_KEY_WKApplication: true
