@@ -4,6 +4,11 @@
 > simulator defects below are fixed. Only **Task 7 — hardware verification**
 > remains; see "What is left" at the bottom. The body of this document is kept
 > as the record of where Tasks 1-2 stood.
+>
+> **Superseded again — a code review found ten defects, four of them blockers.**
+> PR #1 is open but **must not be merged** until they are fixed. The work is
+> planned task-by-task in
+> `docs/superpowers/plans/2026-09-04-watch-stage-3-review-fixes.md` — start there.
 
 **Date:** 2026-09-04
 **Branch:** `worktree-watch-stage-3` (worktree at `.claude/worktrees/watch-stage-3`)
