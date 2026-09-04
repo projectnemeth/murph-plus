@@ -65,7 +65,14 @@ final class LiveMirrorStore {
         }
     }
 
-    func clear() {
+    /// Private on purpose: `markFinished` is the only external door.
+    ///
+    /// Unlike `markFinished` this does *not* record the id in `finished`, so an
+    /// outside caller would leave the session re-openable by a straggling
+    /// heart-rate event — the exact bug `finished` was added to fix. There is
+    /// no production caller for a bare clear, so there is no reason to offer
+    /// one.
+    private func clear() {
         sessionID = nil
         state = nil
         lastUpdate = nil

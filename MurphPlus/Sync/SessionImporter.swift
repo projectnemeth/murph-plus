@@ -73,9 +73,12 @@ enum SessionImporter {
         return state.pausedSeconds(between: startedAt, and: end)
     }
 
-    /// Links to the live template when the ID resolves; reconstructs from the
-    /// snapshot when it does not, so a deleted template never costs history the
-    /// record of what the workout actually was.
+    /// Three paths, in order. Links to the live template when the ID resolves;
+    /// failing that, matches an existing template on shape, because the Watch's
+    /// starter templates carry ids generated per process launch and an existing
+    /// install's seeded templates carry ids from before sync existed; and only
+    /// when neither hits does it reconstruct from the snapshot, so a deleted
+    /// template never costs history the record of what the workout actually was.
     private static func resolveTemplate(_ spec: TemplateSpec, context: ModelContext) throws -> WorkoutTemplate {
         let specID = spec.id
         let descriptor = FetchDescriptor<WorkoutTemplate>(

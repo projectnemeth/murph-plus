@@ -82,18 +82,6 @@ final class LiveMirrorStoreTests: XCTestCase {
         XCTAssertFalse(store.isStale)
     }
 
-    func test_clearingResetsEverything() {
-        let store = LiveMirrorStore()
-        store.receive(sessionID: UUID(), event: started(t(0)))
-
-        store.clear()
-
-        XCTAssertNil(store.sessionID)
-        XCTAssertNil(store.state)
-        XCTAssertNil(store.lastUpdate)
-        XCTAssertTrue(store.isStale)
-    }
-
     /// A watch whose battery dies sends no terminal event — it simply stops.
     /// If the mirror never expires, `StartView` hides Begin forever and the
     /// phone can never start a workout again.
@@ -211,7 +199,9 @@ final class LiveMirrorStoreTests: XCTestCase {
     }
 
     /// The existing behaviour must survive: marking the session that is
-    /// actually being mirrored finished still clears it.
+    /// actually being mirrored finished still clears it — every field of it.
+    /// (`clear()` itself is private; `markFinished` is the only door to it, so
+    /// this is where the full reset is asserted.)
     func test_markFinishedForTheCurrentlyMirroredSessionStillClearsIt() {
         let store = LiveMirrorStore()
         let id = UUID()
@@ -221,6 +211,8 @@ final class LiveMirrorStoreTests: XCTestCase {
 
         XCTAssertNil(store.state)
         XCTAssertNil(store.sessionID)
+        XCTAssertNil(store.lastUpdate)
+        XCTAssertTrue(store.isStale)
         XCTAssertFalse(store.isMirroring)
     }
 }
