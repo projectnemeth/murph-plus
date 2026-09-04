@@ -155,12 +155,25 @@ final class WatchSyncEmissionTests: XCTestCase {
     /// makes every post-resume checkpoint fail the strictly-greater merge rule,
     /// so the second half of the workout — and the event that marks it complete —
     /// never lands.
+    ///
+    /// The pre-crash journal deliberately carries heart-rate events too. They
+    /// are checkpointed by nobody, so `checkpointSequence(for:)` must filter
+    /// them out before counting; without them in the journal that filter is
+    /// verified only by inspection, and it is load-bearing — an unfiltered
+    /// count would leap the sequence far ahead of what the phone was ever sent.
     func test_resumingContinuesTheCheckpointSequenceRatherThanRestartingIt() async throws {
         await start()
+        workout.onHeartRate?(138)                  // journalled, never checkpointed
         controller.advance()                       // finishes run 1
+        workout.onHeartRate?(151)
+        workout.onHeartRate?(154)
         controller.advance()                       // logs round 1
         let beforeCrash = try XCTUnwrap(transport.checkpoints.last).checkpointSeq
         XCTAssertEqual(beforeCrash, 3)
+        XCTAssertEqual(
+            try XCTUnwrap(controller.journal).events.count, 6,
+            "Three heart-rate events really are in the journal the resume replays"
+        )
 
         // A relaunch: brand-new controller and transport over the same journal.
         let resumedTransport = FakeSessionTransport()
@@ -178,6 +191,52 @@ final class WatchSyncEmissionTests: XCTestCase {
         XCTAssertGreaterThan(
             afterResume, beforeCrash,
             "A post-resume checkpoint must outrank the last one the phone stored"
+        )
+    }
+
+    /// The app holds exactly ONE long-lived controller (`MurphPlusWatchApp`
+    /// keeps it in `@State`), so a second workout in the same launch runs on
+    /// the very object that ran the first. Every other relaunch test here
+    /// builds a fresh controller and so cannot see this.
+    ///
+    /// If `checkpointSeq` survived `finishAndReset()`, session B would emit
+    /// sequence numbers continuing A's, while a post-crash resume derives them
+    /// from B's own journal — a number far below what the phone stored. Every
+    /// remaining checkpoint, the terminal one included, would then fail
+    /// `SessionMerge`'s strictly-greater test, leaving B `.inProgress` on the
+    /// phone forever and so filtered out of history entirely.
+    func test_aSecondSessionInTheSameLaunchStartsAFreshSequenceSpace() async throws {
+        // Session A, on the shared controller, run far enough to climb.
+        await start()
+        controller.advance()                       // finishes run 1
+        controller.advance()                       // logs round 1
+        controller.advance()                       // logs round 2
+        controller.abandon()
+        controller.finishAndReset()
+
+        // Session B, on that SAME controller — the app's real object lifetime.
+        await start()
+        controller.advance()                       // finishes run 1
+        let sessionB = try XCTUnwrap(controller.journal?.sessionID)
+        let lastSeqB = try XCTUnwrap(transport.checkpoints.last).checkpointSeq
+
+        // A relaunch mid-B: brand-new controller over the same directory.
+        let resumedTransport = FakeSessionTransport()
+        let resumed = WatchSessionController(
+            workout: FakeWorkoutController(),
+            journalDirectory: directory,
+            transport: resumedTransport
+        )
+        let didResume = try await resumed.resumeExistingSession()
+        XCTAssertTrue(didResume, "B's journal must be the resumable one")
+        XCTAssertEqual(resumed.journal?.sessionID, sessionB, "A was abandoned, so B is what resumes")
+
+        resumed.advance()                          // logs round 1
+
+        let afterResume = try XCTUnwrap(resumedTransport.checkpoints.last).checkpointSeq
+        XCTAssertGreaterThan(
+            afterResume, lastSeqB,
+            "A post-resume checkpoint must outrank the last one the phone stored for B"
         )
     }
 

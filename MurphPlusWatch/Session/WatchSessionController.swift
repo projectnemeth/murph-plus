@@ -185,12 +185,6 @@ final class WatchSessionController {
         workout.beginRunActivity(resetDistanceBaseline: true)
     }
 
-    /// Opens the on-disk journal for a new session.
-    ///
-    /// Split out from `startSession` because the failure has to be handled,
-    /// not swallowed: with `journal` nil every later `try journal?.append(...)`
-    /// is a no-op that throws nothing, so without this an entire workout would
-    /// be recorded to nothing behind a green "Complete".
     /// Runs `work`, giving up the wait after `seconds`.
     ///
     /// Deliberately *not* a `withTaskGroup` race: a task group does not return
@@ -226,7 +220,30 @@ final class WatchSessionController {
         }
     }
 
+    /// Opens the on-disk journal for a new session.
+    ///
+    /// Split out from `startSession` because the failure has to be handled,
+    /// not swallowed: with `journal` nil every later `try journal?.append(...)`
+    /// is a no-op that throws nothing, so without this an entire workout would
+    /// be recorded to nothing behind a green "Complete".
+    ///
+    /// A new journal opens a new sequence space, so the counter resets here.
+    /// The app keeps ONE long-lived controller (`MurphPlusWatchApp` holds it in
+    /// `@State`) and `finishAndReset()` deliberately does not touch
+    /// `checkpointSeq`, so without this a second session in the same launch
+    /// would continue the first one's numbering — while both restore paths
+    /// (`resumeExistingSession`, `abandonResumableSession`) derive the number
+    /// absolutely from the journal's own event count. After a relaunch mid-B
+    /// the derived number would fall far below what the phone stored, and every
+    /// checkpoint from there — including the terminal one — would fail
+    /// `SessionMerge`'s strictly-greater test, stranding the session
+    /// `.inProgress` and so hidden from history. Only *new* journals come
+    /// through here (`resumeExistingSession` assigns `journal` directly), so
+    /// neither restore path is disturbed. With this, "checkpointSeq equals the
+    /// number of non-heart-rate events in the current journal" is an invariant
+    /// rather than a coincidence.
     func openJournal() {
+        checkpointSeq = 0
         do {
             journal = try SessionJournal(sessionID: UUID(), directory: journalDirectory)
         } catch {
