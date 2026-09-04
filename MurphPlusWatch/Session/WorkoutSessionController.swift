@@ -1,0 +1,164 @@
+// MurphPlusWatch/Session/WorkoutSessionController.swift
+import Foundation
+import HealthKit
+import Observation
+
+/// Wraps `HKWorkoutSession` and `HKLiveWorkoutBuilder`.
+///
+/// One workout session typed `.crossTraining` spans the whole Murph, so it
+/// appears in Fitness as a single workout rather than three. Inside it,
+/// activity segmentation marks the runs `.running` and the rounds
+/// `.functionalStrengthTraining`.
+///
+/// That segmentation is load-bearing for calorie accuracy: with
+/// `.functionalStrengthTraining`, active energy is estimated primarily from
+/// heart-rate elevation, which is the correct model for calisthenics — a
+/// motion-driven estimate would badly under-count pull-ups, since the user
+/// burns energy while going nowhere.
+///
+/// Every capability here is optional to the app functioning. If authorization
+/// is denied, the session still runs to completion with no heart rate and no
+/// distance; nothing in this type may block the workout.
+@Observable
+final class WorkoutSessionController: NSObject {
+    private let healthStore = HKHealthStore()
+    private var session: HKWorkoutSession?
+    private var builder: HKLiveWorkoutBuilder?
+
+    private(set) var currentHeartRate: Int?
+    private(set) var currentRunDistanceMeters: Double?
+    private(set) var isAuthorized = false
+
+    /// Fires at most once per 5 seconds; the caller journals each one.
+    var onHeartRate: ((Int) -> Void)?
+    private var lastHeartRateEmit: Date?
+    private static let heartRateThrottle: TimeInterval = 5
+
+    /// Distance accumulated before the current run began, so a run's distance
+    /// is its own and not the workout's total.
+    private var distanceAtRunStart: Double = 0
+    private var isInRunActivity = false
+
+    private let heartRateType = HKQuantityType(.heartRate)
+    private let distanceType = HKQuantityType(.distanceWalkingRunning)
+
+    func requestAuthorization() async {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+        let share: Set<HKSampleType> = [HKQuantityType.workoutType()]
+        let read: Set<HKObjectType> = [heartRateType, distanceType]
+        do {
+            try await healthStore.requestAuthorization(toShare: share, read: read)
+            isAuthorized = true
+        } catch {
+            // A denial is a normal outcome, not a failure state. The session
+            // proceeds without heart rate or distance.
+            isAuthorized = false
+        }
+    }
+
+    func start(indoor: Bool) async {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+        let configuration = HKWorkoutConfiguration()
+        configuration.activityType = .crossTraining
+        configuration.locationType = indoor ? .indoor : .outdoor
+
+        do {
+            let session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
+            let builder = session.associatedWorkoutBuilder()
+            builder.dataSource = HKLiveWorkoutDataSource(
+                healthStore: healthStore, workoutConfiguration: configuration
+            )
+            builder.delegate = self
+
+            self.session = session
+            self.builder = builder
+
+            session.startActivity(with: .now)
+            try await builder.beginCollection(at: .now)
+        } catch {
+            // Leave `session`/`builder` nil: every later call is a no-op and the
+            // workout continues without HealthKit.
+            self.session = nil
+            self.builder = nil
+        }
+    }
+
+    func beginRunActivity() {
+        distanceAtRunStart = currentTotalDistance()
+        isInRunActivity = true
+        currentRunDistanceMeters = 0
+        beginActivity(.running)
+    }
+
+    func beginRoundsActivity() {
+        isInRunActivity = false
+        currentRunDistanceMeters = nil
+        beginActivity(.functionalStrengthTraining)
+    }
+
+    private func beginActivity(_ type: HKWorkoutActivityType) {
+        // Activity segmentation is a method on the session, not the builder —
+        // the builder only records what the session's activities produce.
+        guard let session else { return }
+        session.endCurrentActivity(on: .now)
+        let configuration = HKWorkoutConfiguration()
+        configuration.activityType = type
+        session.beginNewActivity(configuration: configuration, date: .now, metadata: nil)
+    }
+
+    func pause() { session?.pause() }
+    func resume() { session?.resume() }
+
+    func finish() async {
+        guard let session, let builder else { return }
+        session.end()
+        try? await builder.endCollection(at: .now)
+        _ = try? await builder.finishWorkout()
+        self.session = nil
+        self.builder = nil
+    }
+
+    private func currentTotalDistance() -> Double {
+        builder?.statistics(for: distanceType)?
+            .sumQuantity()?
+            .doubleValue(for: .meter()) ?? 0
+    }
+}
+
+extension WorkoutSessionController: HKLiveWorkoutBuilderDelegate {
+    func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {}
+
+    func workoutBuilder(
+        _ workoutBuilder: HKLiveWorkoutBuilder,
+        didCollectDataOf collectedTypes: Set<HKSampleType>
+    ) {
+        for type in collectedTypes {
+            guard let quantityType = type as? HKQuantityType else { continue }
+
+            if quantityType == heartRateType {
+                guard let bpm = workoutBuilder.statistics(for: quantityType)?
+                    .mostRecentQuantity()?
+                    .doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
+                else { continue }
+
+                let rounded = Int(bpm.rounded())
+                currentHeartRate = rounded
+
+                // Live display updates every sample; the journal gets one every
+                // 5 seconds, which is ~700 events across a long Murph.
+                let now = Date.now
+                if lastHeartRateEmit.map({ now.timeIntervalSince($0) >= Self.heartRateThrottle }) ?? true {
+                    lastHeartRateEmit = now
+                    onHeartRate?(rounded)
+                }
+            }
+
+            if quantityType == distanceType, isInRunActivity {
+                // Distance accumulated during the rounds is discarded rather
+                // than added to a run — pacing between pull-up sets must not
+                // inflate the mile.
+                currentRunDistanceMeters = max(0, currentTotalDistance() - distanceAtRunStart)
+            }
+        }
+    }
+}
