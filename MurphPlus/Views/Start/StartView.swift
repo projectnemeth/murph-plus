@@ -23,33 +23,38 @@ struct StartView: View {
                         workoutSection
                         vestSection
 
-                        if sync.mirror.isMirroring {
-                            // Never offer Start while the Watch owns a
-                            // session. Two live sessions is the one conflict
-                            // this design refuses to resolve, so the guard is
-                            // to make it unreachable rather than to merge it
-                            // afterwards.
-                            NavigationLink {
-                                MirroredSessionView(mirror: sync.mirror)
-                            } label: {
-                                MurphBanner(
-                                    tone: .info,
-                                    text: "Session running on Apple Watch · Tap to follow along"
-                                )
+                        // `isStale` is time-derived, so `@Observable` alone
+                        // will not re-render when it flips; the timer forces
+                        // a re-evaluation once a second.
+                        TimelineView(.periodic(from: .now, by: 1)) { _ in
+                            if sync.mirror.isMirroring {
+                                // Never offer Start while the Watch owns a
+                                // session. Two live sessions is the one conflict
+                                // this design refuses to resolve, so the guard is
+                                // to make it unreachable rather than to merge it
+                                // afterwards.
+                                NavigationLink {
+                                    MirroredSessionView(mirror: sync.mirror)
+                                } label: {
+                                    MurphBanner(
+                                        tone: .info,
+                                        text: "Session running on Apple Watch · Tap to follow along"
+                                    )
+                                }
+                            } else {
+                                MurphButton(
+                                    variant: .primary,
+                                    size: .lg,
+                                    full: true,
+                                    icon: Image(systemName: "play.fill"),
+                                    title: "Begin"
+                                ) {
+                                    guard let selectedTemplate else { return }
+                                    let weight = vestOn ? Int(vestWeightText) : nil
+                                    onBegin(selectedTemplate, vestOn, weight)
+                                }
+                                .disabled(selectedTemplate == nil)
                             }
-                        } else {
-                            MurphButton(
-                                variant: .primary,
-                                size: .lg,
-                                full: true,
-                                icon: Image(systemName: "play.fill"),
-                                title: "Begin"
-                            ) {
-                                guard let selectedTemplate else { return }
-                                let weight = vestOn ? Int(vestWeightText) : nil
-                                onBegin(selectedTemplate, vestOn, weight)
-                            }
-                            .disabled(selectedTemplate == nil)
                         }
                     }
                     .padding(.horizontal, MurphSpacing.gutterScreen)

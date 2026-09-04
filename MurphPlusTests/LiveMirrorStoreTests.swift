@@ -93,4 +93,49 @@ final class LiveMirrorStoreTests: XCTestCase {
         XCTAssertNil(store.lastUpdate)
         XCTAssertTrue(store.isStale)
     }
+
+    /// A watch whose battery dies sends no terminal event — it simply stops.
+    /// If the mirror never expires, `StartView` hides Begin forever and the
+    /// phone can never start a workout again.
+    func test_aMirrorThatHasGoneStaleIsNoLongerMirroring() {
+        let store = LiveMirrorStore(staleAfter: 0.05)
+        store.receive(sessionID: UUID(), event: started(t(0)))
+        XCTAssertTrue(store.isMirroring)
+
+        Thread.sleep(forTimeInterval: 0.1)
+
+        XCTAssertTrue(store.isStale)
+        XCTAssertFalse(store.isMirroring, "A dead link must release the Start screen")
+    }
+
+    /// Heart rate keeps arriving after the workout ends: the handler guards
+    /// only on `isPaused`, and HealthKit's `finish()` is awaited asynchronously.
+    /// Without a guard the first straggler re-opens the mirror as an empty
+    /// session and the phone shows a live 00:00 clock for a finished workout.
+    func test_anEventArrivingAfterTheSessionEndedDoesNotReopenTheMirror() {
+        let store = LiveMirrorStore()
+        let id = UUID()
+        store.receive(sessionID: id, event: started(t(0)))
+        store.receive(sessionID: id, event: .abandoned(at: t(60)))
+        XCTAssertFalse(store.isMirroring)
+
+        store.receive(sessionID: id, event: .heartRate(bpm: 140, at: t(61)))
+
+        XCTAssertNil(store.state, "A finished session must stay finished")
+        XCTAssertFalse(store.isMirroring)
+    }
+
+    /// But a genuinely new workout must still be able to start mirroring.
+    func test_aNewSessionAfterAFinishedOneStillMirrors() {
+        let store = LiveMirrorStore()
+        let first = UUID()
+        store.receive(sessionID: first, event: started(t(0)))
+        store.receive(sessionID: first, event: .abandoned(at: t(60)))
+
+        let second = UUID()
+        store.receive(sessionID: second, event: started(t(100)))
+
+        XCTAssertTrue(store.isMirroring)
+        XCTAssertEqual(store.sessionID, second)
+    }
 }

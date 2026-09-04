@@ -15,24 +15,39 @@ final class LiveMirrorStore {
     private(set) var state: SessionState?
     private(set) var lastUpdate: Date?
 
+    /// Sessions already seen to completion. Heart rate keeps arriving for a
+    /// short while after the terminal event, and without this the first
+    /// straggler would be read as a brand-new workout.
+    private var finished: Set<UUID> = []
+
     /// How long a gap makes the mirror untrustworthy. Live events arrive on
     /// every round tap and every 5-second heart-rate sample, so ten seconds of
     /// silence means the link is down rather than the user being still.
-    private static let staleAfter: TimeInterval = 10
+    private let staleAfter: TimeInterval
+
+    init(staleAfter: TimeInterval = 10) {
+        self.staleAfter = staleAfter
+    }
 
     /// A frozen clock with no explanation is worse than an honest one: the
     /// view says "not connected" rather than showing a stopped timer as live.
     var isStale: Bool {
         guard let lastUpdate else { return true }
-        return Date.now.timeIntervalSince(lastUpdate) > Self.staleAfter
+        return Date.now.timeIntervalSince(lastUpdate) > staleAfter
     }
 
+    /// Deliberately consults `isStale`. A watch that runs out of battery sends
+    /// no terminal event, it just stops; without the staleness test the mirror
+    /// would claim a session is live forever and `StartView` would never give
+    /// the Begin button back.
     var isMirroring: Bool {
-        guard let state else { return false }
-        return !state.isTerminal
+        guard let state, !state.isTerminal else { return false }
+        return !isStale
     }
 
     func receive(sessionID: UUID, event: SessionEvent) {
+        guard !finished.contains(sessionID) else { return }
+
         // A different id means a different workout — never accumulate the new
         // session's events onto the old one's rounds.
         if self.sessionID != sessionID {
@@ -44,7 +59,10 @@ final class LiveMirrorStore {
 
         // Once the session ends, the phone's own history is the record. A
         // lingering mirror would render it a second time alongside it.
-        if state?.isTerminal == true { clear() }
+        if state?.isTerminal == true {
+            finished.insert(sessionID)
+            clear()
+        }
     }
 
     func clear() {
