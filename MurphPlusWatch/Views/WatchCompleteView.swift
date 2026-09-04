@@ -3,9 +3,9 @@ import SwiftUI
 
 /// Total, average heart rate, and the three splits at a glance.
 ///
-/// The PB badge is deliberately absent until Stage 3: the Watch holds no
-/// history to compare against, and a badge that cannot be trusted is worse
-/// than no badge.
+/// The PB badge arrived with Stage 3 and not before: until the phone pushed
+/// its records down, the Watch held no history to compare against, and a badge
+/// that cannot be trusted is worse than no badge.
 struct WatchCompleteView: View {
     @Bindable var controller: WatchSessionController
     var sync: WatchSyncCoordinator
@@ -14,6 +14,19 @@ struct WatchCompleteView: View {
     /// the way back on Setup with a clean controller, not just pop this one
     /// screen, so this is a passthrough rather than `@Environment(\.dismiss)`.
     let onDone: () -> Void
+
+    /// The records as they stood when this screen appeared.
+    ///
+    /// Frozen on purpose. `sync.context` is `@Observable` and the phone pushes
+    /// a fresh context after every terminal checkpoint it imports — including
+    /// the one this very screen is reporting. Recomputed live, the newly
+    /// imported session *is* the record it is being compared against, and
+    /// `PersonalBestCheck`'s strict `<` turns `X < X` into false: the badge
+    /// would appear and then vanish a couple of seconds later, on exactly the
+    /// run that earned it, while the user is still looking at it. The snapshot
+    /// is also the question actually worth asking — "did this beat the record
+    /// as of when I finished".
+    @State private var bestsAtAppear: [PersonalBest] = []
 
     /// Compared only against a record for the *same* vest setting — see
     /// `PersonalBestCheck`. An abandoned session is never a best regardless of
@@ -24,7 +37,7 @@ struct WatchCompleteView: View {
             elapsed: SessionDerivation.elapsed(controller.state, now: .now),
             templateID: controller.state.template?.id,
             vestOn: controller.state.vestOn,
-            among: sync.context?.personalBests ?? []
+            among: bestsAtAppear
         )
     }
 
@@ -85,6 +98,7 @@ struct WatchCompleteView: View {
         }
         .background(MurphColor.surfacePage)
         .navigationBarBackButtonHidden(true)
+        .onAppear { bestsAtAppear = sync.context?.personalBests ?? [] }
     }
 
     private func row(_ label: String, _ value: String) -> some View {
