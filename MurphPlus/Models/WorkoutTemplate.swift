@@ -1,8 +1,10 @@
 // MurphPlus/Models/WorkoutTemplate.swift
+import Foundation
 import SwiftData
 
 @Model
 final class WorkoutTemplate {
+    var id: UUID = UUID()
     var name: String = ""
     var runDistanceMiles: Double = 1.0
     var totalPullUps: Int = 100
@@ -42,4 +44,18 @@ final class WorkoutTemplate {
     var pushUpsPerRound: Int { totalPushUps / safeRounds }
     var squatsPerRound: Int { totalSquats / safeRounds }
     var repsPerRound: Int { totalReps / safeRounds }
+
+    /// The value-type snapshot that crosses to the Watch and is embedded in a
+    /// session's `started` event.
+    var spec: TemplateSpec {
+        TemplateSpec(
+            id: id,
+            name: name,
+            runDistanceMiles: runDistanceMiles,
+            totalPullUps: totalPullUps,
+            totalPushUps: totalPushUps,
+            totalSquats: totalSquats,
+            rounds: rounds
+        )
+    }
 }
