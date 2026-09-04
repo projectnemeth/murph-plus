@@ -178,4 +178,40 @@ final class SessionImporterTests: XCTestCase {
 
         XCTAssertEqual(try allSessions().count, 2)
     }
+
+    /// The Watch's built-in starters carry ids the phone has never seen when no
+    /// context has synced yet. Rebuilding one must not add a second copy of a
+    /// template the phone already has under a different id — that copy shows up
+    /// in the Start picker, once per Watch relaunch.
+    func test_doesNotDuplicateATemplateThePhoneAlreadyHasByShape() throws {
+        let existing = WorkoutTemplate(name: "Half Murph", runDistanceMiles: 0.5,
+                                       totalPullUps: 50, totalPushUps: 100,
+                                       totalSquats: 150, rounds: 10)
+        context.insert(existing)
+        try context.save()
+
+        let unknownID = TemplateSpec(id: UUID(), name: "Half Murph", runDistanceMiles: 0.5,
+                                     totalPullUps: 50, totalPushUps: 100,
+                                     totalSquats: 150, rounds: 10)
+        try SessionImporter.apply(payload(unknownID, seq: 1, rounds: 10, finished: true), context: context)
+
+        let templates = try context.fetch(FetchDescriptor<WorkoutTemplate>())
+        XCTAssertEqual(templates.count, 1, "Matched the existing template by shape")
+    }
+
+    /// But a genuinely different workout must still be reconstructed.
+    func test_stillRebuildsATemplateWhoseShapeIsNew() throws {
+        let existing = WorkoutTemplate(name: "Half Murph", runDistanceMiles: 0.5,
+                                       totalPullUps: 50, totalPushUps: 100,
+                                       totalSquats: 150, rounds: 10)
+        context.insert(existing)
+        try context.save()
+
+        let different = TemplateSpec(id: UUID(), name: "Quarter Murph", runDistanceMiles: 0.25,
+                                     totalPullUps: 25, totalPushUps: 50,
+                                     totalSquats: 75, rounds: 5)
+        try SessionImporter.apply(payload(different, seq: 1, rounds: 5, finished: true), context: context)
+
+        XCTAssertEqual(try context.fetch(FetchDescriptor<WorkoutTemplate>()).count, 2)
+    }
 }

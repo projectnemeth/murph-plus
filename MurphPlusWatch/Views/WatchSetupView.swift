@@ -206,13 +206,13 @@ struct WatchSetupView: View {
     /// Mirrors `DefaultTemplates` on the phone. Replaced by the synced list in
     /// Stage 3; kept here so this screen is fully exercisable before sync exists.
     static let starterTemplates: [TemplateSpec] = [
-        TemplateSpec(id: UUID(), name: "Full Murph (Straight Sets)", runDistanceMiles: 1.0,
+        TemplateSpec(id: UUID(uuidString: "7F3A1C90-0001-4000-A000-000000000001")!, name: "Full Murph (Straight Sets)", runDistanceMiles: 1.0,
                      totalPullUps: 100, totalPushUps: 200, totalSquats: 300, rounds: 1),
-        TemplateSpec(id: UUID(), name: "Full Murph (Cindy-Style, 20 Rounds)", runDistanceMiles: 1.0,
+        TemplateSpec(id: UUID(uuidString: "7F3A1C90-0002-4000-A000-000000000002")!, name: "Full Murph (Cindy-Style, 20 Rounds)", runDistanceMiles: 1.0,
                      totalPullUps: 100, totalPushUps: 200, totalSquats: 300, rounds: 20),
-        TemplateSpec(id: UUID(), name: "Half Murph", runDistanceMiles: 0.5,
+        TemplateSpec(id: UUID(uuidString: "7F3A1C90-0003-4000-A000-000000000003")!, name: "Half Murph", runDistanceMiles: 0.5,
                      totalPullUps: 50, totalPushUps: 100, totalSquats: 150, rounds: 10),
-        TemplateSpec(id: UUID(), name: "Mini Murph", runDistanceMiles: 0.25,
+        TemplateSpec(id: UUID(uuidString: "7F3A1C90-0004-4000-A000-000000000004")!, name: "Mini Murph", runDistanceMiles: 0.25,
                      totalPullUps: 25, totalPushUps: 50, totalSquats: 75, rounds: 5),
     ]
 }

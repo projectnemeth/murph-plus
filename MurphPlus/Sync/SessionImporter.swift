@@ -83,6 +83,23 @@ enum SessionImporter {
         )
         if let found = try context.fetch(descriptor).first { return found }
 
+        // Fall back to matching on shape. The Watch's starter templates carry
+        // ids generated per process launch, and an existing install's seeded
+        // templates carry ids from before sync existed — in both cases the id
+        // misses but the workout is the one the user already has. Without this
+        // the picker gains a duplicate for every Watch relaunch.
+        let allTemplates = (try? context.fetch(FetchDescriptor<WorkoutTemplate>())) ?? []
+        if let match = allTemplates.first(where: {
+            $0.name == spec.name
+                && $0.rounds == spec.rounds
+                && $0.runDistanceMiles == spec.runDistanceMiles
+                && $0.totalPullUps == spec.totalPullUps
+                && $0.totalPushUps == spec.totalPushUps
+                && $0.totalSquats == spec.totalSquats
+        }) {
+            return match
+        }
+
         let rebuilt = WorkoutTemplate(
             name: spec.name,
             runDistanceMiles: spec.runDistanceMiles,
