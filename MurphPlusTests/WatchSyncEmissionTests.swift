@@ -112,6 +112,37 @@ final class WatchSyncEmissionTests: XCTestCase {
         XCTAssertEqual(transport.checkpoints.first?.sessionID, journalID)
     }
 
+    /// A relaunch mid-session rebuilds the controller, but the phone still holds
+    /// the checkpoint sequence from before the crash. Restarting the count at 1
+    /// makes every post-resume checkpoint fail the strictly-greater merge rule,
+    /// so the second half of the workout — and the event that marks it complete —
+    /// never lands.
+    func test_resumingContinuesTheCheckpointSequenceRatherThanRestartingIt() async throws {
+        await start()
+        controller.advance()                       // finishes run 1
+        controller.advance()                       // logs round 1
+        let beforeCrash = try XCTUnwrap(transport.checkpoints.last).checkpointSeq
+        XCTAssertEqual(beforeCrash, 3)
+
+        // A relaunch: brand-new controller and transport over the same journal.
+        let resumedTransport = FakeSessionTransport()
+        let resumed = WatchSessionController(
+            workout: FakeWorkoutController(),
+            journalDirectory: directory,
+            transport: resumedTransport
+        )
+        let didResume = try await resumed.resumeExistingSession()
+        XCTAssertTrue(didResume, "The journal on disk must be resumable")
+
+        resumed.advance()                          // logs round 2
+
+        let afterResume = try XCTUnwrap(resumedTransport.checkpoints.last).checkpointSeq
+        XCTAssertGreaterThan(
+            afterResume, beforeCrash,
+            "A post-resume checkpoint must outrank the last one the phone stored"
+        )
+    }
+
     /// The transport is optional: the 13 Stage 2 tests construct the
     /// controller without one, and nothing may crash when it is absent.
     func test_aControllerWithNoTransportStillRunsTheSession() async throws {

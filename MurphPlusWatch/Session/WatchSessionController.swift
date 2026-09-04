@@ -117,6 +117,15 @@ final class WatchSessionController {
         journal = found
         state = found.state
 
+        // Continue the sequence the phone has already seen rather than
+        // restarting it. Every non-heart-rate event in the replayed journal
+        // produced exactly one checkpoint before the relaunch (see `emit`), so
+        // counting them reproduces the last sequence number sent. Restarting at
+        // 1 would make every checkpoint from here fail `SessionMerge`'s
+        // strictly-greater test, and the phone would keep the pre-crash copy
+        // forever — stuck `.inProgress`, and so hidden from history.
+        checkpointSeq = found.events.filter { !$0.isHeartRate }.count
+
         // Prefer reattaching to the still-live session watchOS kept running;
         // fall back to a fresh one if there is nothing to recover (or
         // recovery fails) — a second `HKWorkout` in Fitness is a much
