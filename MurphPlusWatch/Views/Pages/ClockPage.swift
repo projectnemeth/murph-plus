@@ -14,14 +14,22 @@ struct ClockPage: View {
                                value: "\(controller.state.completedRounds)/\(controller.state.template?.rounds ?? 0)"),
                 trailing: .init(label: "BPM",
                                 value: controller.heartRate.map(String.init) ?? "—",
-                                tone: MurphColor.lime500)
+                                tone: MurphColor.lime500),
+                corner: WatchPhaseLabel.text(
+                    phase: controller.state.phase, isPaused: controller.isPaused
+                ),
+                cornerTone: controller.isPaused ? MurphColor.dust500 : MurphColor.bone200
             )
 
             Spacer(minLength: MurphSpacing.space3)
             VStack(spacing: 4) {
-                Text(controller.isPaused ? "Paused" : "Elapsed")
+                // Always "Elapsed": the corner chip carries paused state on
+                // every page now, and saying it twice on one screen — in the
+                // same amber, one line apart — read as a stutter rather than
+                // emphasis.
+                Text("Elapsed")
                     .murphType(.micro)
-                    .foregroundStyle(controller.isPaused ? MurphColor.dust500 : MurphColor.textMuted)
+                    .foregroundStyle(MurphColor.textMuted)
                 Text(elapsedText)
                     .murphType(.clock(36))
                     .foregroundStyle(MurphColor.textPrimary)

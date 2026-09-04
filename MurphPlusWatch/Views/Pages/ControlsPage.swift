@@ -16,7 +16,11 @@ struct ControlsPage: View {
             WatchStatusStrip(
                 leading: .init(label: "Elapsed", value: elapsedText, tone: MurphColor.hazard500),
                 trailing: .init(label: "Round",
-                                value: "\(controller.state.completedRounds)/\(controller.state.template?.rounds ?? 0)")
+                                value: "\(controller.state.completedRounds)/\(controller.state.template?.rounds ?? 0)"),
+                corner: WatchPhaseLabel.text(
+                    phase: controller.state.phase, isPaused: controller.isPaused
+                ),
+                cornerTone: controller.isPaused ? MurphColor.dust500 : MurphColor.bone200
             )
 
             Spacer(minLength: MurphSpacing.space3)

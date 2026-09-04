@@ -12,6 +12,15 @@ struct WatchStatusStrip: View {
 
     let leading: Cell
     let trailing: Cell
+    /// Short label for the band's top-left, level with the system clock.
+    ///
+    /// watchOS reserves only the *right* of that row for its time indicator,
+    /// so the left of the clearance is free. `nil` renders nothing.
+    var corner: String? = nil
+    /// Amber for paused, matching the treatment the clock page already gives
+    /// that state — a paused workout is the one thing the corner says that the
+    /// user needs to catch without reading it.
+    var cornerTone: Color = MurphColor.bone200
 
     /// Room above the labels for watchOS's system time.
     ///
@@ -27,7 +36,7 @@ struct WatchStatusStrip: View {
     /// `cell`). Added on top, the band grew to ~40% of the screen and left the
     /// pages below with no slack at all, which is what collapsed their
     /// `Spacer`s and jammed every element against the next.
-    private static let timeIndicatorClearance: CGFloat = MurphSpacing.space5
+    private static let timeIndicatorClearance: CGFloat = MurphSpacing.space6
 
     var body: some View {
         HStack(spacing: 0) {
@@ -36,6 +45,19 @@ struct WatchStatusStrip: View {
             cell(trailing)
         }
         .padding(.top, Self.timeIndicatorClearance)
+        .overlay(alignment: .topLeading) {
+            if let corner {
+                // Deliberately not `.micro` in `textMuted`: that is exactly
+                // the treatment the two column labels below it use, so the
+                // phase read as a third one stacked above "Elapsed". `.tag`
+                // in bone gives it the weight of a status chip instead.
+                Text(corner)
+                    .murphType(.tag)
+                    .foregroundStyle(cornerTone)
+                    .padding(.leading, MurphSpacing.space2)
+                    .frame(height: Self.timeIndicatorClearance, alignment: .center)
+            }
+        }
         .background(MurphColor.surfaceRaised)
         .overlay(alignment: .bottom) {
             Rectangle().fill(MurphColor.lineHairline).frame(height: 1)

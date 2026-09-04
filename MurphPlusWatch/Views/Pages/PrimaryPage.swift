@@ -14,7 +14,11 @@ struct PrimaryPage: View {
                 leading: .init(label: "Elapsed", value: elapsedText, tone: MurphColor.hazard500),
                 trailing: .init(label: "BPM",
                                 value: controller.heartRate.map(String.init) ?? "—",
-                                tone: MurphColor.lime500)
+                                tone: MurphColor.lime500),
+                corner: WatchPhaseLabel.text(
+                    phase: controller.state.phase, isPaused: controller.isPaused
+                ),
+                cornerTone: controller.isPaused ? MurphColor.dust500 : MurphColor.bone200
             )
 
             Spacer(minLength: MurphSpacing.space3)
@@ -37,7 +41,7 @@ struct PrimaryPage: View {
         switch controller.state.phase {
         case .run1, .run2:
             VStack(spacing: 4) {
-                Text(controller.state.phase == .run1 ? "Run 1 · Distance" : "Run 2 · Distance")
+                Text("Distance")
                     .murphType(.micro)
                     .foregroundStyle(MurphColor.textMuted)
                 Text(distanceText)
@@ -56,8 +60,9 @@ struct PrimaryPage: View {
                     .murphType(.clock(38))
                     .foregroundStyle(MurphColor.textPrimary)
                 if let spec = controller.state.template {
-                    Text("\(spec.pullUpsPerRound) pull · \(spec.pushUpsPerRound) push · \(spec.squatsPerRound) sqt")
-                        .murphType(.micro)
+                    Text("\(spec.pullUpsPerRound) pull·\(spec.pushUpsPerRound) push·\(spec.squatsPerRound) sqt")
+                        .murphType(.microDense)
+                        .lineLimit(1)
                         .foregroundStyle(MurphColor.textSecondary)
                 }
             }

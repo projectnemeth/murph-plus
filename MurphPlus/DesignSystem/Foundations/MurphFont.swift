@@ -101,6 +101,15 @@ struct MurphTypeStyle {
     }
     static let micro = MurphTypeStyle(font: MurphFontFamily.mono(10, weight: MurphFontWeight.semiBold), tracking: 0.14 * 10, uppercase: true)
     static let tag = MurphTypeStyle(font: MurphFontFamily.mono(11, weight: MurphFontWeight.extraBold), tracking: 0.08 * 11, uppercase: true)
+    /// `micro` for dense one-line data, not labels.
+    ///
+    /// `micro`'s 0.14em is a label tracking — generous because a label is two
+    /// or three words. On a run of ~30 monospaced characters it adds ~40pt of
+    /// pure letter-spacing, which is what pushed the watch's per-round
+    /// exercise line past the screen and into an ellipsis. Same face, same
+    /// size, tracking dialled back to just enough to keep the digits from
+    /// touching.
+    static let microDense = MurphTypeStyle(font: MurphFontFamily.mono(10, weight: MurphFontWeight.semiBold), tracking: 0.02 * 10, uppercase: true)
 }
 
 private struct MurphTextStyleModifier: ViewModifier {
