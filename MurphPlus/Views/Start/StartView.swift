@@ -79,10 +79,25 @@ struct StartView: View {
                             MurphBadge(title: "\(template.totalReps) reps")
                             MurphBadge(title: "\(template.runDistanceMiles.formatted(.number.precision(.fractionLength(2)))) mi \u{00d7} 2")
                         }
+                        // Per-round counts are shown only for a partitioned
+                        // template. On straight sets they equal the totals, so
+                        // repeating them would be noise.
                         HStack(spacing: MurphSpacing.space3) {
-                            repStat(label: "Pull-ups", value: template.totalPullUps)
-                            repStat(label: "Push-ups", value: template.totalPushUps)
-                            repStat(label: "Squats", value: template.totalSquats)
+                            repStat(
+                                label: "Pull-ups",
+                                value: template.totalPullUps,
+                                perRound: template.rounds > 1 ? template.pullUpsPerRound : nil
+                            )
+                            repStat(
+                                label: "Push-ups",
+                                value: template.totalPushUps,
+                                perRound: template.rounds > 1 ? template.pushUpsPerRound : nil
+                            )
+                            repStat(
+                                label: "Squats",
+                                value: template.totalSquats,
+                                perRound: template.rounds > 1 ? template.squatsPerRound : nil
+                            )
                         }
                     }
                 }
@@ -90,7 +105,10 @@ struct StartView: View {
         }
     }
 
-    private func repStat(label: String, value: Int) -> some View {
+    /// `value` is the workout total; `perRound` is what a single round costs,
+    /// or nil for straight sets. Showing both means the reader never has to
+    /// divide 25 by 5 rounds to find out this is a 5/10/15 set.
+    private func repStat(label: String, value: Int, perRound: Int?) -> some View {
         VStack(alignment: .leading, spacing: MurphSpacing.space1 + 2) {
             Text(label)
                 .murphType(.micro)
@@ -98,6 +116,11 @@ struct StartView: View {
             Text("\(value)")
                 .murphType(.metric())
                 .foregroundStyle(MurphColor.textPrimary)
+            if let perRound {
+                Text("\(perRound) / round")
+                    .murphType(.micro)
+                    .foregroundStyle(MurphColor.textAccent)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

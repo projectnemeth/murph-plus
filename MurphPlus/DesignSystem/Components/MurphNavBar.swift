@@ -10,6 +10,12 @@ private struct MurphNavBarModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .navigationBarTitleDisplayMode(.inline)
+            // Every screen using this bar supplies its own leading dismiss
+            // control, so the system chevron is a duplicate. On a pushed screen
+            // it rendered right next to our own back arrow — two back buttons,
+            // one bar. A no-op for the sheet and full-screen-cover users, which
+            // never get a system back button in the first place.
+            .navigationBarBackButtonHidden(true)
             .toolbarBackground(MurphColor.surfacePage, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
