@@ -285,6 +285,7 @@ git commit -m "feat: add sync payload envelopes and the checkpoint merge rule"
 - Consumes: `SyncPayload`, `SessionMerge`, `SessionState`, `SessionDerivation`, `HeartRateAggregator`.
 - Produces: `SessionImporter.apply(_ payload: SyncPayload, context: ModelContext) throws -> MurphSession?` — returns `nil` when the payload was ignored as stale.
 - Model additions: `MurphSession.id`, `.originRaw`, `.journalData`, `.lastCheckpointSeq`; `RunSplit.distanceMeters`, `.avgHeartRate`, `.maxHeartRate`; `RoundLog.avgHeartRate`, `.maxHeartRate`.
+- **Already added by Stage 1 — populate, do not re-declare:** `MurphSession.roundsStartedAt: Date?`, `.pausedIntervalsData: Data?`, `.pausedSeconds`, `.pausedAt`, `.indoor`; `RoundLog.pausedSecondsInRound`. The importer must set `roundsStartedAt` and `pausedIntervalsData` (see the code in Step 4) or an imported session's round 1 silently absorbs run 1's pause.
 
 - [ ] **Step 1: Add the model fields**
 
@@ -570,6 +571,13 @@ enum SessionImporter {
         session.completedRounds = state.completedRounds
         session.currentPhaseStartedAt = state.currentPhaseStartedAt
         session.pausedSeconds = totalPaused(state)
+        // Stage 1 persists the true rounds-phase start and `RoundThroughputBuilder`
+        // PREFERS it. Leaving it nil would send the builder to its fallback,
+        // `run1.startTime + run1.durationSeconds` — which is net of pause, so round 1
+        // would absorb any pause taken during run 1 and read as slower than it was,
+        // bending the fatigue curve. Every imported session must carry it.
+        session.roundsStartedAt = state.roundsStartedAt
+        session.pausedIntervalsData = try? JSONEncoder().encode(state.pausedIntervals)
         session.lastCheckpointSeq = payload.checkpointSeq
         session.journalData = try? JSONEncoder().encode(payload.strippingHeartRate().events)
 
