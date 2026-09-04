@@ -26,6 +26,12 @@ final class MurphSession {
     var indoor: Bool = false
     var pausedSeconds: Double = 0
     var pausedAt: Date?
+    /// JSON-encoded `[PausedInterval]`, the exact intervals paused so far.
+    /// Persisted (not just the running `pausedSeconds` total) so a relaunch
+    /// mid-session can still net out a pause taken inside the run or round
+    /// that is currently in progress and not yet logged — `pausedSeconds`
+    /// alone cannot place *where* the paused time falls, only its sum.
+    var pausedIntervalsData: Data?
 
     @Relationship(deleteRule: .cascade, inverse: \RunSplit.session)
     var runSplits: [RunSplit] = []

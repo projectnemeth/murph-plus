@@ -26,9 +26,13 @@ final class RoundThroughputPauseTests: XCTestCase {
 
         engine.start()
 
-        // Pause for 30s partway through run 1, then finish it 500s (gross)
-        // after start — net duration should be 470s.
+        // A measurable (real-clock) pause, not a back-to-back pause/resume
+        // that nets to ~0ms: only a pause with actual duration can tell apart
+        // "the true boundary was persisted" from "the old buggy derivation
+        // was used and happened to coincide because the pause was too short
+        // to matter."
         engine.pause()
+        Thread.sleep(forTimeInterval: 0.25)
         engine.resume()
 
         engine.finishRun()
@@ -41,12 +45,17 @@ final class RoundThroughputPauseTests: XCTestCase {
         let roundsStartedAt = try XCTUnwrap(engine.session.roundsStartedAt)
 
         // The old (buggy) derivation — run1.startTime + run1.durationSeconds —
-        // is net of the pause, so it can only land at or before the true
-        // boundary. Persisting the true boundary means it is never earlier
-        // than that derived fallback.
+        // is net of the pause, so it lands *before* the true boundary by
+        // approximately the paused amount. This asserts the drift is real and
+        // in the right ballpark, not just non-negative: reintroducing the bug
+        // (assigning `run1.startTime.addingTimeInterval(run1.durationSeconds)`
+        // instead of `state.roundsStartedAt`) would make `drift` collapse to
+        // ~0 and fail the lower bound below.
         let run1 = try XCTUnwrap(engine.session.runSplits.first { $0.runIndex == 1 })
         let derivedFallback = run1.startTime.addingTimeInterval(run1.durationSeconds)
-        XCTAssertGreaterThanOrEqual(roundsStartedAt, derivedFallback)
+        let drift = roundsStartedAt.timeIntervalSince(derivedFallback)
+        XCTAssertGreaterThan(drift, 0.15, "the true rounds-phase start should be measurably later than the pause-skewed derivation")
+        XCTAssertLessThan(drift, 2.0, "sanity bound — this test only takes a ~0.25s pause")
 
         let throughputs = RoundThroughputBuilder.build(session: engine.session)
         XCTAssertEqual(throughputs.count, 2)

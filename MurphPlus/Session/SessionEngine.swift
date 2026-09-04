@@ -111,7 +111,7 @@ final class SessionEngine {
             session.phase = .run1
             session.currentPhaseStartedAt = at
 
-        case .runFinished:
+        case let .runFinished(index, _, _):
             // `state` already computed the split net of pause; mirror it.
             if let split = state.runSplits.last {
                 let model = RunSplit(
@@ -122,14 +122,16 @@ final class SessionEngine {
                 )
                 context.insert(model)
                 session.runSplits.append(model)
-                if split.index == 1 {
-                    // Persist the true rounds-phase start rather than relying on
-                    // run1.startTime + run1.durationSeconds: that derivation is
-                    // net of pause and would land earlier than the real
-                    // boundary once a pause occurs during run 1, silently
-                    // absorbing that pause into round 1's duration.
-                    session.roundsStartedAt = state.roundsStartedAt
-                }
+            }
+            if index == 1 {
+                // Persist the true rounds-phase start rather than relying on
+                // run1.startTime + run1.durationSeconds: that derivation is
+                // net of pause and would land earlier than the real boundary
+                // once a pause occurs during run 1, silently absorbing that
+                // pause into round 1's duration. Kept outside the `if let`
+                // above so the boundary is still recorded even in the
+                // (should-not-happen) case the split itself wasn't produced.
+                session.roundsStartedAt = state.roundsStartedAt
             }
             session.phase = state.phase
             session.currentPhaseStartedAt = state.currentPhaseStartedAt
@@ -165,6 +167,11 @@ final class SessionEngine {
                 session.pausedSeconds += at.timeIntervalSince(start)
                 session.pausedAt = nil
             }
+            // Persist the exact intervals, not just their sum: `state` (already
+            // updated by `apply` above) is the source of truth, and this is
+            // what lets a relaunch net out a pause taken during the run or
+            // round still in progress and not yet logged.
+            session.pausedIntervalsData = try? JSONEncoder().encode(state.pausedIntervals)
 
         case .heartRate:
             break // Stage 2 concern; the phone collects none.
@@ -178,9 +185,16 @@ final class SessionEngine {
 
     /// Reconstructs core state from a persisted session, for resume-after-relaunch.
     ///
-    /// `pausedIntervals` is deliberately left empty: every already-logged round
-    /// and split carries its own net correction, so only pauses taken from now
-    /// on need tracking. `pausedSeconds` carries the running total for elapsed.
+    /// `pausedIntervals` is restored from `pausedIntervalsData` rather than
+    /// left empty: every already-logged round and split carries its own net
+    /// correction, but the run or round still *in progress* at relaunch has
+    /// not been logged yet, and without the real intervals a pause taken
+    /// inside it would silently be written as zero once it finally is —
+    /// exactly the fatigue-curve skew pause exists to prevent. Restoring the
+    /// intervals also keeps the live elapsed-time clock (`totalElapsed`,
+    /// which reads `state.pausedIntervals` via `SessionDerivation`) correct
+    /// across the relaunch, rather than jumping forward by every second
+    /// previously paused.
     private static func rebuildState(from session: MurphSession) -> SessionState {
         var state = SessionState()
         state.template = session.template?.spec
@@ -194,6 +208,10 @@ final class SessionEngine {
         state.completedAt = session.completedAt
         state.completedRounds = session.completedRounds
         state.pausedAt = session.pausedAt
+        if let data = session.pausedIntervalsData,
+           let intervals = try? JSONDecoder().decode([PausedInterval].self, from: data) {
+            state.pausedIntervals = intervals
+        }
         state.roundTimestamps = session.roundLogs
             .sorted { $0.roundNumber < $1.roundNumber }
             .map(\.completedAt)
