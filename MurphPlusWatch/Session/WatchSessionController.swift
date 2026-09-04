@@ -388,13 +388,15 @@ final class WatchSessionController {
         // payload, so a swallowed append is permanent, invisible data loss.
         // Surface it instead via `journalWriteFailed`, which the completion
         // screen shows to the user.
+        var appended = true
         do {
             try journal?.append(event)
         } catch {
             journalWriteFailed = true
+            appended = false
         }
         state.apply(event)
-        emit(event)
+        emit(event, appended: appended)
     }
 
     /// Mirrors the event to the phone on both channels.
@@ -403,7 +405,17 @@ final class WatchSessionController {
     /// mirror and the durable checkpoint always describe the same session —
     /// otherwise the phone would import a workout it had been mirroring under
     /// a different identity and show it twice.
-    private func emit(_ event: SessionEvent) {
+    ///
+    /// `appended` gates the checkpoint half only. The live mirror is
+    /// in-memory and lossy by design, so it fires regardless of whether the
+    /// journal write landed. The checkpoint half must not: a checkpoint sent
+    /// after a failed append would carry `journal.events` *without* this
+    /// event — a payload identical to the previous checkpoint, burning a
+    /// sequence number for nothing — and would throw off
+    /// `resumeExistingSession`'s replay-derived count, which assumes every
+    /// non-heart-rate event still in the journal produced exactly one
+    /// checkpoint.
+    private func emit(_ event: SessionEvent, appended: Bool) {
         guard let journal, let transport else { return }
 
         transport.sendLive(event, sessionID: journal.sessionID)
@@ -413,7 +425,7 @@ final class WatchSessionController {
         // would swamp the transfer queue for no gain — it is already mirrored
         // live above, and its durable form is HealthKit's. The receiver keeps
         // the highest sequence, so extra transfers are harmless.
-        guard !event.isHeartRate else { return }
+        guard !event.isHeartRate, appended else { return }
         checkpointSeq += 1
         transport.transferCheckpoint(SyncPayload(
             sessionID: journal.sessionID,

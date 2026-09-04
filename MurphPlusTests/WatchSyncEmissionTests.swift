@@ -96,6 +96,44 @@ final class WatchSyncEmissionTests: XCTestCase {
         XCTAssertEqual(transport.liveEvents.count, liveAfterStart + 1, "But it still mirrors")
     }
 
+    /// Fix round 1, Important: a checkpoint sent after a failed append would
+    /// carry `journal.events` *without* the event that failed to append — a
+    /// payload identical to the previous checkpoint, burning a sequence
+    /// number for nothing, and one that would throw off
+    /// `resumeExistingSession`'s replay-derived count (Task 1's fix), which
+    /// assumes every non-heart-rate event still in the journal produced
+    /// exactly one checkpoint. So a failed append must not checkpoint at
+    /// all, even though the live mirror and `state` are unaffected by the
+    /// durability gap.
+    func test_aFailedAppendDoesNotCheckpointButStateAndLiveMirrorStillAdvance() async throws {
+        await start()
+        controller.advance()   // finishes run 1
+
+        let checkpointsBefore = transport.checkpoints.count
+        let lastSeqBefore = try XCTUnwrap(transport.checkpoints.last).checkpointSeq
+        let liveBefore = transport.liveEvents.count
+
+        // Delete the journal file out from under the live session so the
+        // next append throws.
+        let url = try XCTUnwrap(controller.journal).url
+        try FileManager.default.removeItem(at: url)
+
+        controller.advance()   // logs round 1; the append fails
+
+        XCTAssertTrue(controller.journalWriteFailed)
+        XCTAssertEqual(controller.state.completedRounds, 1, "The tap still counts even though the write failed")
+        XCTAssertEqual(transport.liveEvents.count, liveBefore + 1, "The live mirror is unaffected by durability")
+
+        XCTAssertEqual(transport.checkpoints.count, checkpointsBefore, "A failed append must not checkpoint")
+        XCTAssertEqual(transport.checkpoints.last?.checkpointSeq, lastSeqBefore)
+
+        // The property `resumeExistingSession` depends on: the sequence still
+        // matches exactly how many non-heart-rate events actually survived to
+        // the journal, because the failed one was never appended to it.
+        let survivingCount = try XCTUnwrap(controller.journal).events.filter { !$0.isHeartRate }.count
+        XCTAssertEqual(transport.checkpoints.last?.checkpointSeq, survivingCount)
+    }
+
     func test_theCheckpointCarriesTheWholeJournalNotADelta() async throws {
         await start()
         controller.advance()
