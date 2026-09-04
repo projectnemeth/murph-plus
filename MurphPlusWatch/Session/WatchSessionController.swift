@@ -6,19 +6,44 @@ import Observation
 /// alongside. Every mutation follows the same three beats — ask the state
 /// machine for an event, append it to the journal, mirror the HealthKit side.
 ///
-/// `@MainActor` because `WorkoutSessionController` is: every call into it
-/// needs main-actor context, and this class is `@Observable` and drives
-/// SwiftUI besides, so the isolation is correct for both reasons at once.
+/// `@MainActor` because `WorkoutControlling` is: every call into it needs
+/// main-actor context, and this class is `@Observable` and drives SwiftUI
+/// besides, so the isolation is correct for both reasons at once.
+///
+/// HealthKit is reached only through `WorkoutControlling`, never directly, so
+/// this type imports nothing beyond Foundation and Observation. That is what
+/// lets it be compiled into the phone target and exercised from the iOS test
+/// bundle — the watch target has no test bundle of its own.
 @MainActor
 @Observable
 final class WatchSessionController {
     private(set) var state = SessionState()
     private(set) var journal: SessionJournal?
-    private let workout = WorkoutSessionController()
+    private let workout: any WorkoutControlling
+    private let journalDirectory: URL
 
-    private static var journalDirectory: URL {
+    nonisolated static var defaultJournalDirectory: URL {
         URL.documentsDirectory.appendingPathComponent("sessions", isDirectory: true)
     }
+
+    init(workout: any WorkoutControlling, journalDirectory: URL) {
+        self.workout = workout
+        self.journalDirectory = journalDirectory
+    }
+
+    #if os(watchOS)
+    /// The app's own construction: the concrete HealthKit controller and the
+    /// real documents directory. Kept behind `#if` because
+    /// `WorkoutSessionController` wraps `HKWorkoutSession`, which is
+    /// watchOS-only — off the watch, injection is the only way in, which is
+    /// exactly what the tests want.
+    convenience init() {
+        self.init(
+            workout: WorkoutSessionController(),
+            journalDirectory: Self.defaultJournalDirectory
+        )
+    }
+    #endif
 
     var heartRate: Int? { workout.currentHeartRate }
     var runDistanceMeters: Double? { workout.currentRunDistanceMeters }
@@ -26,10 +51,12 @@ final class WatchSessionController {
     var isFinished: Bool { state.isTerminal }
     var canUndo: Bool { state.undoableRoundNumber != nil }
 
-    /// Set when a journal append throws. The event still applied to `state`
-    /// in that case — see `record(_:)` — so this is purely a signal for a
-    /// later task to warn the user that this session's on-disk record (and,
-    /// in a later stage, the sync payload it becomes) may be incomplete.
+    /// Set when this session's on-disk record is not guaranteed — either the
+    /// journal could not be created at all, or an append threw. In both cases
+    /// the workout itself proceeds: the event still applied to `state` (see
+    /// `record(_:)`), and a missing journal makes every append a silent no-op.
+    /// The flag is what stops that from hiding behind a green "Complete", and
+    /// is what the completion screen warns from.
     private(set) var journalWriteFailed = false
 
     var elapsed: TimeInterval { SessionDerivation.elapsed(state, now: .now) }
@@ -40,17 +67,27 @@ final class WatchSessionController {
         await workout.requestAuthorization()
     }
 
+    /// Whether an unfinished journal is waiting on disk.
+    ///
+    /// Deliberately non-committal: the launch screen asks the user to resume
+    /// or abandon, per the design spec, and neither path may be taken on the
+    /// user's behalf. Auto-resuming would also remove the only escape from a
+    /// journal that can never be made terminal.
+    func hasResumableSession() -> Bool {
+        ((try? SessionJournal.resumable(in: journalDirectory)) ?? nil) != nil
+    }
+
     /// Returns true if an unfinished journal was found and restored.
     ///
     /// Restoring the journal is not enough on its own: a relaunch means
-    /// `workout` is a brand-new `WorkoutSessionController` with no session,
-    /// no builder, and no heart-rate handler, even though the workout is
-    /// still live on the Watch's side. Reattach HealthKit the same way
-    /// `startSession` does, then issue whatever activity segment matches the
-    /// phase the journal replayed into — otherwise a resumed session quietly
-    /// stops recording heart rate for the rest of the workout.
+    /// `workout` is a brand-new controller with no session, no builder, and no
+    /// heart-rate handler, even though the workout is still live on the
+    /// Watch's side. Reattach HealthKit the same way `startSession` does, then
+    /// issue whatever activity segment matches the phase the journal replayed
+    /// into — otherwise a resumed session quietly stops recording heart rate
+    /// for the rest of the workout.
     func resumeExistingSession() async throws -> Bool {
-        guard let found = try SessionJournal.resumable(in: Self.journalDirectory) else {
+        guard let found = try SessionJournal.resumable(in: journalDirectory) else {
             return false
         }
         journal = found
@@ -68,19 +105,34 @@ final class WatchSessionController {
 
         switch state.phase {
         case .run1, .run2:
-            workout.beginRunActivity()
+            // Reset the distance baseline only on the fresh-start path, where
+            // the new builder has recorded nothing. On the recover path the
+            // builder still holds the miles run before the relaunch, and
+            // re-snapshotting would subtract them away — the athlete would see
+            // "0.00 · 1.00 to go" half a mile in, and the eventual split would
+            // record a distance short by everything before the crash.
+            workout.beginRunActivity(resetDistanceBaseline: !recovered)
         case .rounds:
             workout.beginRoundsActivity()
         case .notStarted, .completed:
             break
         }
 
+        // The replayed state may carry an open pause. HealthKit knows nothing
+        // about it — a recovered session was never paused by this process, and
+        // a fresh one has only just started — so without this the state
+        // machine believes it is paused while `HKWorkoutSession` keeps
+        // accruing time and calories, and the user's later Resume would call
+        // `resume()` on a session that was never paused.
+        if state.isPaused {
+            workout.pause()
+        }
+
         return true
     }
 
     func startSession(template: TemplateSpec, vestOn: Bool, vestWeightLbs: Int?, indoor: Bool) async {
-        let journal = try? SessionJournal(sessionID: UUID(), directory: Self.journalDirectory)
-        self.journal = journal
+        openJournal()
 
         await workout.start(indoor: indoor)
         attachHeartRateHandler()
@@ -89,7 +141,22 @@ final class WatchSessionController {
             state, template: template, vestOn: vestOn,
             vestWeightLbs: vestWeightLbs, indoor: indoor, now: .now
         ))
-        workout.beginRunActivity()
+        workout.beginRunActivity(resetDistanceBaseline: true)
+    }
+
+    /// Opens the on-disk journal for a new session.
+    ///
+    /// Split out from `startSession` because the failure has to be handled,
+    /// not swallowed: with `journal` nil every later `try journal?.append(...)`
+    /// is a no-op that throws nothing, so without this an entire workout would
+    /// be recorded to nothing behind a green "Complete".
+    func openJournal() {
+        do {
+            journal = try SessionJournal(sessionID: UUID(), directory: journalDirectory)
+        } catch {
+            journal = nil
+            journalWriteFailed = true
+        }
     }
 
     /// Ruling 3: a hardware spike to confirm whether `HKWorkoutSession.pause()`
@@ -124,7 +191,7 @@ final class WatchSessionController {
             perform(SessionStateMachine.completeRound(state, at: .now))
             // The round that reaches the template total begins run 2.
             if before == .rounds, state.phase == .run2 {
-                workout.beginRunActivity()
+                workout.beginRunActivity(resetDistanceBaseline: true)
             }
         case .notStarted, .completed:
             break
@@ -175,6 +242,44 @@ final class WatchSessionController {
         Task { await workout.finish() }
     }
 
+    /// Abandons the unfinished journal offered by the launch prompt, without
+    /// ever loading it into this controller.
+    ///
+    /// The terminal `.abandoned` event is what stops the journal being offered
+    /// again — but if the volume is unwritable that append fails, and a
+    /// journal that can never be made terminal would hand the user the same
+    /// prompt on every single launch with no way out. So when the writes do
+    /// not stick, the file is deleted outright: losing the record of an
+    /// abandoned attempt is a far smaller loss than a permanently wedged app.
+    func abandonResumableSession() {
+        guard let found = (try? SessionJournal.resumable(in: journalDirectory)) ?? nil else {
+            return
+        }
+
+        var replayed = found.state
+        var wrote = true
+
+        // Same Ruling 2 shape as `abandon()`: close an open pause first, so the
+        // journal never ends on an unclosed `paused`.
+        if replayed.isPaused,
+           case let .success(event) = SessionStateMachine.resume(replayed, at: .now) {
+            do {
+                try found.append(event)
+                replayed.apply(event)
+            } catch {
+                wrote = false
+            }
+        }
+
+        if wrote, case let .success(event) = SessionStateMachine.abandon(replayed, at: .now) {
+            do { try found.append(event) } catch { wrote = false }
+        }
+
+        if !wrote || !found.state.isTerminal {
+            try? found.delete()
+        }
+    }
+
     /// Returns the controller to a clean slate once the completion screen has
     /// been shown, so `WatchSetupView` can start a brand-new session right
     /// away. Deliberately does **not** delete the on-disk journal — it holds
@@ -203,8 +308,8 @@ final class WatchSessionController {
         // gap would be a worse failure than the gap itself. But the failure
         // must not vanish silently: this journal is a later stage's sync
         // payload, so a swallowed append is permanent, invisible data loss.
-        // Surface it instead via `journalWriteFailed`, which a later task
-        // surfaces to the user.
+        // Surface it instead via `journalWriteFailed`, which the completion
+        // screen shows to the user.
         do {
             try journal?.append(event)
         } catch {

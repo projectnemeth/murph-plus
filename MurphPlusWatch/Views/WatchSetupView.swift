@@ -17,6 +17,7 @@ struct WatchSetupView: View {
     @AppStorage("watchVestWeight") private var vestWeight = 20
     @AppStorage("watchIndoor") private var indoor = false
     @State private var showLive = false
+    @State private var showResumePrompt = false
 
     var body: some View {
         NavigationStack {
@@ -63,12 +64,55 @@ struct WatchSetupView: View {
                 WatchLiveView(controller: controller, onDone: { showLive = false })
             }
         }
+        .sheet(isPresented: $showResumePrompt) {
+            resumePrompt
+        }
         .task {
             await controller.requestAuthorization()
-            if (try? await controller.resumeExistingSession()) == true {
-                showLive = true
-            }
+            // The spec offers resume *or* abandon here. Auto-resuming would
+            // not just be unfaithful: it is the only escape from a journal
+            // that cannot be made terminal (an unwritable volume), which
+            // otherwise drops the user into the same phantom workout on every
+            // launch with no way out.
+            showResumePrompt = controller.hasResumableSession()
         }
+    }
+
+    /// Resume or abandon, with no dismiss-by-swipe: leaving the choice
+    /// unmade is what the auto-resume bug effectively did.
+    private var resumePrompt: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: MurphSpacing.space3) {
+                Text("Workout in progress")
+                    .murphType(.bodySm)
+                    .foregroundStyle(MurphColor.textPrimary)
+                Text("Pick up where you left off, or discard it.")
+                    .murphType(.micro)
+                    .foregroundStyle(MurphColor.textMuted)
+
+                Button("Resume") {
+                    showResumePrompt = false
+                    Task {
+                        if (try? await controller.resumeExistingSession()) == true {
+                            showLive = true
+                        }
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(MurphColor.hazard500)
+
+                Button("Discard") {
+                    controller.abandonResumableSession()
+                    showResumePrompt = false
+                }
+                .buttonStyle(.bordered)
+                .tint(MurphColor.dust500)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, MurphSpacing.space2)
+        }
+        .background(MurphColor.surfacePage)
+        .interactiveDismissDisabled()
     }
 
     private func templateRow(_ template: TemplateSpec) -> some View {

@@ -92,4 +92,46 @@ final class HeartRateAggregationTests: XCTestCase {
         XCTAssertEqual(summaries[1]?.average, 150)
         XCTAssertEqual(summaries[2]?.average, 180)
     }
+
+    /// A run's window is wall-clock, not net of pause. `durationSeconds` is
+    /// net, so ending the window at `startTime + durationSeconds` would cut
+    /// the paused span off the *end* of the run and drop every sample from
+    /// its final stretch — the hardest part of it.
+    func test_runSummariesIncludeSamplesAfterAPauseInsideTheRun() {
+        let events: [SessionEvent] = [
+            .started(at: t(0), template: spec, vestOn: false, vestWeightLbs: nil, indoor: false),
+            .heartRate(bpm: 120, at: t(60)),
+            .paused(at: t(100)),
+            .resumed(at: t(400)),          // a five minute pause
+            .heartRate(bpm: 180, at: t(500)),
+            .runFinished(index: 1, at: t(600), distanceMeters: nil),
+        ]
+        let state = SessionState.replay(events)
+        // Net duration is 300s, so the naive window would end at t(300) and
+        // silently exclude the 180 bpm sample taken at t(500).
+        XCTAssertEqual(state.runSplits.first?.durationSeconds, 300)
+
+        let summaries = HeartRateAggregator.runSummaries(events: events, state: state)
+
+        XCTAssertEqual(summaries[1]?.average, 150)
+        XCTAssertEqual(summaries[1]?.maximum, 180)
+    }
+
+    /// The widened window must still stop at the run's own end — a sample from
+    /// the rounds that follow may not be pulled into the run's average.
+    func test_runSummariesStopAtTheRunsEnd() {
+        let events: [SessionEvent] = [
+            .started(at: t(0), template: spec, vestOn: false, vestWeightLbs: nil, indoor: false),
+            .heartRate(bpm: 140, at: t(50)),
+            .runFinished(index: 1, at: t(100), distanceMeters: nil),
+            .heartRate(bpm: 200, at: t(150)),
+            .roundCompleted(number: 1, at: t(200)),
+        ]
+        let state = SessionState.replay(events)
+
+        let summaries = HeartRateAggregator.runSummaries(events: events, state: state)
+
+        XCTAssertEqual(summaries[1]?.average, 140)
+        XCTAssertEqual(summaries[1]?.maximum, 140)
+    }
 }

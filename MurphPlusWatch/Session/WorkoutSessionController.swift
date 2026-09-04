@@ -27,7 +27,7 @@ import Observation
 /// touching any stored property, so all mutation is single-threaded.
 @MainActor
 @Observable
-final class WorkoutSessionController: NSObject {
+final class WorkoutSessionController: NSObject, WorkoutControlling {
     private let healthStore = HKHealthStore()
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
@@ -124,10 +124,19 @@ final class WorkoutSessionController: NSObject {
         }
     }
 
-    func beginRunActivity() {
-        distanceAtRunStart = currentTotalDistance()
+    /// See `WorkoutControlling.beginRunActivity(resetDistanceBaseline:)`.
+    ///
+    /// The baseline is what makes a run's distance its own rather than the
+    /// workout's total. It must be re-snapshotted when a run *begins*, and must
+    /// not be when a run already in progress is merely re-segmented after a
+    /// relaunch: on that path the recovered builder already reports the miles
+    /// covered before the crash, and snapshotting would subtract them away.
+    func beginRunActivity(resetDistanceBaseline: Bool) {
+        if resetDistanceBaseline {
+            distanceAtRunStart = currentTotalDistance()
+        }
         isInRunActivity = true
-        currentRunDistanceMeters = 0
+        currentRunDistanceMeters = max(0, currentTotalDistance() - distanceAtRunStart)
         beginActivity(.running)
     }
 
@@ -155,8 +164,21 @@ final class WorkoutSessionController: NSObject {
         session.end()
         try? await builder.endCollection(at: .now)
         _ = try? await builder.finishWorkout()
-        self.session = nil
-        self.builder = nil
+
+        // Only clear the fields if they still hold the session this call
+        // captured. `finishWorkout()` on an hour-long workout is slow, and
+        // callers fire `finish()` as a detached `Task`; a user who taps Done
+        // and starts a new Murph can install a fresh session and builder while
+        // this call is still suspended. Nil-ing unconditionally would strand
+        // that new `HKWorkoutSession` behind every `guard let session` here —
+        // no segmentation, no distance, and never ended, so it stays live and
+        // blocks all future workouts until the watch reboots. Identity, not a
+        // separate in-flight flag, because it is exactly the right question:
+        // is what I finished still what we are using?
+        if self.session === session {
+            self.session = nil
+            self.builder = nil
+        }
     }
 
     private func currentTotalDistance() -> Double {

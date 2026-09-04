@@ -11,6 +11,12 @@ targets:
     sources:
       - MurphPlus
       - MurphCore
+      # Compiled into the phone app purely so the iOS test bundle can reach it:
+      # `WatchSessionController` is Foundation + Observation only (it talks to
+      # HealthKit through the `WorkoutControlling` seam, never to HealthKit
+      # itself), and the watch target has no test bundle of its own. It is not
+      # referenced by any phone UI.
+      - path: MurphPlusWatch/Session/WatchSessionController.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.projectnemeth.MurphPlus
@@ -58,6 +64,13 @@ targets:
     info:
       path: MurphPlusWatch/Info.plist
       properties:
+        # Without `workout-processing` watchOS suspends the app the moment the
+        # wrist drops. The `HKWorkoutSession` survives system-side, but
+        # `HKLiveWorkoutBuilderDelegate` stops firing, so no heart-rate event
+        # reaches the journal for the rest of the workout and the live view
+        # freezes. This is a plist key only — no portal capability required.
+        WKBackgroundModes:
+          - workout-processing
         UIAppFonts:
           - ArchivoBlack-Regular.ttf
           - DMSans-Variable.ttf

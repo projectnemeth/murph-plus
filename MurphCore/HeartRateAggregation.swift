@@ -45,14 +45,31 @@ enum HeartRateAggregator {
 
     /// Keyed by run index (1 or 2).
     ///
-    /// `durationSeconds` is net of pause, so a run containing a long pause
-    /// computes an end slightly earlier than wall-clock. Samples are not
-    /// collected while paused (the `HKWorkoutSession` is itself paused), so no
-    /// real sample falls in the discarded tail.
+    /// The window is wall-clock: from the run's start to the `runFinished`
+    /// event that ended it. `RunSplitState.durationSeconds` deliberately is
+    /// *not* used to compute the end, because it is net of pause — a five
+    /// minute pause during run 1 would pull the window's end five minutes
+    /// early and silently drop every sample from the run's final five
+    /// minutes, which is the hardest stretch of it.
+    ///
+    /// A paused stretch inside the window contributes nothing on its own:
+    /// samples are never journaled while paused (`WatchSessionController`
+    /// guards on `state.isPaused`), so the window needs no pause handling
+    /// beyond reaching the true end.
     static func runSummaries(events: [SessionEvent], state: SessionState) -> [Int: HeartRateSummary] {
+        var endByIndex: [Int: Date] = [:]
+        for event in events {
+            guard case let .runFinished(index, at, _) = event else { continue }
+            endByIndex[index] = at
+        }
+
         var result: [Int: HeartRateSummary] = [:]
         for split in state.runSplits {
-            let end = split.startTime.addingTimeInterval(split.durationSeconds)
+            // The net-duration end is only a fallback for a state assembled
+            // without the events that produced it; it can only ever be early,
+            // never late, so it cannot pull in a sample from the next segment.
+            let end = endByIndex[split.index]
+                ?? split.startTime.addingTimeInterval(split.durationSeconds)
             if let summary = summary(events: events, from: split.startTime, to: end) {
                 result[split.index] = summary
             }
