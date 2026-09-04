@@ -79,8 +79,22 @@ final class LiveMirrorStore {
     /// straggling event on the same id (heart rate keeps arriving after
     /// `finish()`) would take the "different session" branch in `receive`
     /// and reopen the mirror on a finished workout.
+    ///
+    /// The two halves are deliberately conditioned differently. Recording the
+    /// id in `finished` happens unconditionally: that a session ended is a
+    /// fact independent of what the phone happens to be displaying right now.
+    /// But `clear()` only runs when `sessionID` is the one being marked
+    /// finished, because durable checkpoints are queued and guaranteed — one
+    /// can arrive long after the fact. The watch may finish session A while
+    /// the phone is unreachable, the user may start session B while A's
+    /// checkpoint is still in flight, and the phone may already be mirroring
+    /// B live by the time A's stale terminal checkpoint lands. Clearing
+    /// unconditionally there would wipe B's in-flight mirror mid-workout over
+    /// a fact about A; the guard confines the clear to the session it is
+    /// actually about.
     func markFinished(sessionID: UUID) {
         finished.insert(sessionID)
+        guard self.sessionID == sessionID else { return }
         clear()
     }
 }

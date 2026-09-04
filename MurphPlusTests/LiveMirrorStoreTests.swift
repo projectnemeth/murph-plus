@@ -174,4 +174,53 @@ final class LiveMirrorStoreTests: XCTestCase {
         XCTAssertTrue(store.isMirroring)
         XCTAssertEqual(store.sessionID, second)
     }
+
+    /// A queued, guaranteed checkpoint can land long after the fact: the watch
+    /// finishes session A while the phone is unreachable, the user starts B,
+    /// the phone begins mirroring B live, and only then does A's terminal
+    /// checkpoint arrive. `markFinished(sessionID: A)` must not wipe B's
+    /// in-flight mirror — B was never the session being marked finished.
+    func test_markFinishedForAStaleSessionDoesNotClearADifferentSessionCurrentlyMirroring() {
+        let store = LiveMirrorStore()
+        let a = UUID()
+        let b = UUID()
+        store.receive(sessionID: b, event: started(t(0)))
+        store.receive(sessionID: b, event: .roundCompleted(number: 1, at: t(100)))
+
+        store.markFinished(sessionID: a)
+
+        XCTAssertEqual(store.sessionID, b, "B's mirror must survive a stale checkpoint about A")
+        XCTAssertEqual(store.state?.completedRounds, 1, "B's accumulated rounds must not be wiped")
+        XCTAssertTrue(store.isMirroring)
+    }
+
+    /// Even though the stale checkpoint about A must not clear B's mirror, A's
+    /// id must still be recorded as finished — otherwise a later straggling
+    /// event for A would start mirroring A from empty.
+    func test_markFinishedForAStaleSessionStillRecordsItAsFinished() {
+        let store = LiveMirrorStore()
+        let a = UUID()
+        let b = UUID()
+        store.receive(sessionID: b, event: started(t(0)))
+
+        store.markFinished(sessionID: a)
+        store.receive(sessionID: a, event: .heartRate(bpm: 140, at: t(61)))
+
+        XCTAssertEqual(store.sessionID, b, "A stray event for the already-finished A must not reopen A's mirror or disturb B's")
+        XCTAssertTrue(store.isMirroring)
+    }
+
+    /// The existing behaviour must survive: marking the session that is
+    /// actually being mirrored finished still clears it.
+    func test_markFinishedForTheCurrentlyMirroredSessionStillClearsIt() {
+        let store = LiveMirrorStore()
+        let id = UUID()
+        store.receive(sessionID: id, event: started(t(0)))
+
+        store.markFinished(sessionID: id)
+
+        XCTAssertNil(store.state)
+        XCTAssertNil(store.sessionID)
+        XCTAssertFalse(store.isMirroring)
+    }
 }
