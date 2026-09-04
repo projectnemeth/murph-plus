@@ -54,7 +54,12 @@ final class WatchSyncCoordinator: NSObject, SessionTransport {
             // so dropping it would lose the whole session on the phone.
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("checkpoint-\(payload.sessionID)-\(payload.checkpointSeq).json")
-            guard (try? data.write(to: url)) != nil else { return }
+            do {
+                try data.write(to: url)
+            } catch {
+                NSLog("MurphPlus sync: checkpoint could not be staged for file transfer — \(error.localizedDescription)")
+                return
+            }
             WCSession.default.transferFile(url, metadata: nil)
             return
         }
