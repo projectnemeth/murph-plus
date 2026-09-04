@@ -181,6 +181,31 @@ final class WatchSyncEmissionTests: XCTestCase {
         )
     }
 
+    /// Discarding a recovered session must tell the phone. The phone already
+    /// holds checkpoints for it, so without a final checkpoint it keeps the
+    /// session `.inProgress` forever — hidden from history and (before the
+    /// reaper) unreachable.
+    func test_abandoningARecoveredSessionSendsAFinalCheckpoint() async throws {
+        await start()
+        controller.advance()
+        let sessionID = try XCTUnwrap(controller.journal?.sessionID)
+
+        let relaunchTransport = FakeSessionTransport()
+        let relaunched = WatchSessionController(
+            workout: FakeWorkoutController(),
+            journalDirectory: directory,
+            transport: relaunchTransport
+        )
+        relaunched.abandonResumableSession()
+
+        let final = try XCTUnwrap(relaunchTransport.checkpoints.last)
+        XCTAssertEqual(final.sessionID, sessionID)
+        XCTAssertTrue(
+            SessionState.replay(final.events).isTerminal,
+            "The phone must be told the session ended"
+        )
+    }
+
     /// The transport is optional: the 13 Stage 2 tests construct the
     /// controller without one, and nothing may crash when it is absent.
     func test_aControllerWithNoTransportStillRunsTheSession() async throws {

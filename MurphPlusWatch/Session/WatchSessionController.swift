@@ -118,13 +118,11 @@ final class WatchSessionController {
         state = found.state
 
         // Continue the sequence the phone has already seen rather than
-        // restarting it. Every non-heart-rate event in the replayed journal
-        // produced exactly one checkpoint before the relaunch (see `emit`), so
-        // counting them reproduces the last sequence number sent. Restarting at
-        // 1 would make every checkpoint from here fail `SessionMerge`'s
-        // strictly-greater test, and the phone would keep the pre-crash copy
-        // forever — stuck `.inProgress`, and so hidden from history.
-        checkpointSeq = found.events.filter { !$0.isHeartRate }.count
+        // restarting it. Restarting at 1 would make every checkpoint from here
+        // fail `SessionMerge`'s strictly-greater test, and the phone would keep
+        // the pre-crash copy forever — stuck `.inProgress`, and so hidden from
+        // history.
+        checkpointSeq = Self.checkpointSequence(for: found)
 
         // Prefer reattaching to the still-live session watchOS kept running;
         // fall back to a fresh one if there is nothing to recover (or
@@ -353,9 +351,36 @@ final class WatchSessionController {
             do { try found.append(event) } catch { wrote = false }
         }
 
+        // The phone already holds checkpoints for this session, so it has to
+        // be told the session ended. This path deliberately does not go
+        // through `record(_:)` — that mutates `state`, and this controller is
+        // not the one running the session — so the checkpoint is sent
+        // directly, built from the journal now on disk.
+        if found.state.isTerminal, let transport {
+            checkpointSeq = Self.checkpointSequence(for: found)
+            transport.transferCheckpoint(SyncPayload(
+                sessionID: found.sessionID,
+                checkpointSeq: checkpointSeq,
+                origin: .watch,
+                events: found.events
+            ))
+        }
+
         if !wrote || !found.state.isTerminal {
             try? found.delete()
         }
+    }
+
+    /// The checkpoint sequence number a fresh journal replay reproduces.
+    ///
+    /// Every non-heart-rate event still in the journal produced exactly one
+    /// checkpoint when it was originally recorded (`emit` only counts and
+    /// transfers an event that genuinely reached disk), so counting them here
+    /// reproduces the last sequence number the phone was sent — whether the
+    /// journal is being resumed (`resumeExistingSession`) or is being closed
+    /// out without ever loading into this controller (`abandonResumableSession`).
+    private static func checkpointSequence(for journal: SessionJournal) -> Int {
+        journal.events.filter { !$0.isHeartRate }.count
     }
 
     /// Returns the controller to a clean slate once the completion screen has
