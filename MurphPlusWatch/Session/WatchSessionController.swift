@@ -21,14 +21,22 @@ final class WatchSessionController {
     private(set) var journal: SessionJournal?
     private let workout: any WorkoutControlling
     private let journalDirectory: URL
+    /// How long `startSession` will wait for HealthKit to attach before going
+    /// on without it. See `startSession` for why this is not optional.
+    private let healthKitStartTimeout: TimeInterval
 
     nonisolated static var defaultJournalDirectory: URL {
         URL.documentsDirectory.appendingPathComponent("sessions", isDirectory: true)
     }
 
-    init(workout: any WorkoutControlling, journalDirectory: URL) {
+    init(
+        workout: any WorkoutControlling,
+        journalDirectory: URL,
+        healthKitStartTimeout: TimeInterval = 10
+    ) {
         self.workout = workout
         self.journalDirectory = journalDirectory
+        self.healthKitStartTimeout = healthKitStartTimeout
     }
 
     #if os(watchOS)
@@ -134,7 +142,17 @@ final class WatchSessionController {
     func startSession(template: TemplateSpec, vestOn: Bool, vestWeightLbs: Int?, indoor: Bool) async {
         openJournal()
 
-        await workout.start(indoor: indoor)
+        // Bounded, because `WorkoutControlling.start` is not guaranteed to
+        // return. Shipped without the HealthKit entitlement,
+        // `HKWorkoutSession.init` still succeeded — so the defensive catch in
+        // `WorkoutSessionController.start` never fired — and then
+        // `builder.beginCollection(at:)` was never called back, leaving this
+        // await suspended forever with the user staring at the setup screen.
+        // The workout is the user's, not HealthKit's: a wearable that will not
+        // attach costs heart rate and distance, never the session itself.
+        await withTimeout(healthKitStartTimeout) { [workout] in
+            await workout.start(indoor: indoor)
+        }
         attachHeartRateHandler()
 
         perform(SessionStateMachine.start(
@@ -150,6 +168,41 @@ final class WatchSessionController {
     /// not swallowed: with `journal` nil every later `try journal?.append(...)`
     /// is a no-op that throws nothing, so without this an entire workout would
     /// be recorded to nothing behind a green "Complete".
+    /// Runs `work`, giving up the wait after `seconds`.
+    ///
+    /// Deliberately *not* a `withTaskGroup` race: a task group does not return
+    /// until every child has drained, and `cancelAll()` cannot interrupt a
+    /// continuation that is never resumed — which is precisely the failure
+    /// being defended against, so that shape deadlocks on the one input that
+    /// matters. Here the work runs as an unstructured task that is simply
+    /// abandoned when the deadline wins. Abandoned, not cancelled: a HealthKit
+    /// call that is merely slow should still be allowed to land.
+    ///
+    /// `Gate` is only ever touched from the main actor, so the once-only
+    /// resume needs no lock.
+    private func withTimeout(
+        _ seconds: TimeInterval, _ work: @escaping @MainActor () async -> Void
+    ) async {
+        final class Gate { var resumed = false }
+        let gate = Gate()
+        let nanoseconds = UInt64(seconds * 1_000_000_000)
+
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            Task { @MainActor in
+                await work()
+                guard !gate.resumed else { return }
+                gate.resumed = true
+                continuation.resume()
+            }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: nanoseconds)
+                guard !gate.resumed else { return }
+                gate.resumed = true
+                continuation.resume()
+            }
+        }
+    }
+
     func openJournal() {
         do {
             journal = try SessionJournal(sessionID: UUID(), directory: journalDirectory)

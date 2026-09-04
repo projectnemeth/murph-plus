@@ -23,6 +23,17 @@ struct WatchSetupView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: MurphSpacing.space3) {
+                    // The display face, not `.navigationTitle`. A watchOS
+                    // navigation title is drawn by the system in SF and takes
+                    // no font modifier, so it read as a different app from the
+                    // phone. The phone uses no navigation titles at all — see
+                    // `MurphScreenTitle` — so an in-content heading is also
+                    // the house pattern. `.title` rather than the phone's
+                    // `.display2` purely for scale: 44pt does not fit a watch.
+                    Text("Murph+")
+                        .murphType(.title())
+                        .foregroundStyle(MurphColor.textPrimary)
+
                     ForEach(templates, id: \.id) { template in
                         templateRow(template)
                     }
@@ -59,7 +70,6 @@ struct WatchSetupView: View {
                 .padding(.horizontal, MurphSpacing.space2)
             }
             .background(MurphColor.surfacePage)
-            .navigationTitle("Murph+")
             .navigationDestination(isPresented: $showLive) {
                 WatchLiveView(controller: controller, onDone: { showLive = false })
             }

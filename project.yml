@@ -56,11 +56,23 @@ targets:
         TARGETED_DEVICE_FAMILY: "4"
         GENERATE_INFOPLIST_FILE: true
         INFOPLIST_KEY_CFBundleDisplayName: "Murph+"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_WKApplication: true
         INFOPLIST_KEY_WKCompanionAppBundleIdentifier: com.projectnemeth.MurphPlus
         INFOPLIST_KEY_NSHealthShareUsageDescription: "Murph+ reads your heart rate and distance during a workout so your session records what your body actually did."
         INFOPLIST_KEY_NSHealthUpdateUsageDescription: "Murph+ saves your Murph as a workout so it counts toward your Activity rings."
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Murph+ uses location during the two runs to measure distance and pace. Choose Indoor at setup to skip this."
+    # Without `com.apple.developer.healthkit` every HealthKit call fails with
+    # "Missing com.apple.developer.healthkit entitlement". Critically,
+    # `HKWorkoutSession.init` still SUCCEEDS, so the defensive catch in
+    # `WorkoutSessionController.start` never fires — instead HealthKit's task
+    # server never starts and `builder.beginCollection` never calls back, so
+    # `startSession` awaits forever and the app is stuck on the setup screen.
+    entitlements:
+      path: MurphPlusWatch/MurphPlusWatch.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
     info:
       path: MurphPlusWatch/Info.plist
       properties:
