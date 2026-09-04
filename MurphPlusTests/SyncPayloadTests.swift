@@ -76,14 +76,16 @@ final class SyncPayloadTests: XCTestCase {
 
     /// Every checkpoint carries the whole journal, heart-rate samples
     /// included. An encoded `.heartRate` event costs about 41 bytes, so the
-    /// 65,536-byte `transferUserInfo` ceiling is crossed somewhere around
-    /// 1,600 samples — roughly 2h13m of sampling at one per five seconds.
-    /// This test sits deliberately past that, at 1,800 samples (2.5 hours),
-    /// so it isn't sitting within a percent of the boundary and flipping to
-    /// failing the first time a field is added to or removed from
-    /// `SessionEvent`'s encoding for reasons unrelated to the behavior under
-    /// test. `transferUserInfo` fails silently past its ceiling — on the
-    /// final checkpoint, the one that marks the session complete.
+    /// 60,000-byte `userInfoByteLimit` — set below WatchConnectivity's
+    /// documented 65,536 because that ceiling covers the whole dictionary, not
+    /// just the `Data` in it — is crossed somewhere around 1,460 samples,
+    /// roughly two hours of sampling at one per five seconds. This test sits
+    /// deliberately past that, at 1,800 samples (2.5 hours), so it isn't
+    /// sitting within a percent of the boundary and flipping to failing the
+    /// first time a field is added to or removed from `SessionEvent`'s
+    /// encoding for reasons unrelated to the behavior under test.
+    /// `transferUserInfo` fails silently past its ceiling — on the final
+    /// checkpoint, the one that marks the session complete.
     func test_aLongSessionsPayloadExceedsTheUserInfoLimit() throws {
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         var events: [SessionEvent] = [

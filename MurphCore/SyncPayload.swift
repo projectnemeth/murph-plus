@@ -20,10 +20,19 @@ struct SyncPayload: Codable, Equatable {
     var origin: SessionOrigin
     var events: [SessionEvent]
 
-    /// WatchConnectivity's documented ceiling for `transferUserInfo`. Payloads
-    /// at or above this go by file transfer instead — same queued, guaranteed
-    /// delivery, no size limit.
-    static let userInfoByteLimit = 65_536
+    /// The largest encoded payload that still goes by `transferUserInfo`.
+    /// Anything at or above it takes the file-transfer path instead — same
+    /// queued, guaranteed delivery, no size limit.
+    ///
+    /// Deliberately below WatchConnectivity's documented 65,536: that ceiling
+    /// applies to the serialized `[String: Any]` **dictionary**, not to the
+    /// `Data` inside it, and `transferUserInfo([SyncKey.payload: data])` adds
+    /// property-list framing plus the key on top. A payload just under 65,536
+    /// would pass this check and then breach the real limit — a silent drop, on
+    /// the checkpoint most likely to be the terminal one. The margin costs
+    /// nothing: the file-transfer path is equally durable, so the only price of
+    /// crossing over early is a temporary file.
+    static let userInfoByteLimit = 60_000
 
     /// Heart-rate events are bulky (~700 per long session), already aggregated
     /// into per-segment summaries, and their raw form lives in HealthKit. The
