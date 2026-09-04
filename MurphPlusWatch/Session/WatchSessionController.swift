@@ -24,6 +24,15 @@ final class WatchSessionController {
     /// How long `startSession` will wait for HealthKit to attach before going
     /// on without it. See `startSession` for why this is not optional.
     private let healthKitStartTimeout: TimeInterval
+    /// Injected the same way `workout` is, and optional for the same reason:
+    /// the phone-side test bundle constructs this controller with a fake, and
+    /// a session must run identically with no transport at all.
+    private let transport: (any SessionTransport)?
+    /// Starts at 0 and is pre-incremented, so the first checkpoint sent is 1.
+    /// This is load-bearing: `SessionMerge.shouldApply` is strictly-greater
+    /// against a stored 0, so a checkpoint numbered 0 would be silently
+    /// dropped and the session would never reach the phone.
+    private var checkpointSeq = 0
 
     nonisolated static var defaultJournalDirectory: URL {
         URL.documentsDirectory.appendingPathComponent("sessions", isDirectory: true)
@@ -32,11 +41,13 @@ final class WatchSessionController {
     init(
         workout: any WorkoutControlling,
         journalDirectory: URL,
-        healthKitStartTimeout: TimeInterval = 10
+        healthKitStartTimeout: TimeInterval = 10,
+        transport: (any SessionTransport)? = nil
     ) {
         self.workout = workout
         self.journalDirectory = journalDirectory
         self.healthKitStartTimeout = healthKitStartTimeout
+        self.transport = transport
     }
 
     #if os(watchOS)
@@ -48,7 +59,8 @@ final class WatchSessionController {
     convenience init() {
         self.init(
             workout: WorkoutSessionController(),
-            journalDirectory: Self.defaultJournalDirectory
+            journalDirectory: Self.defaultJournalDirectory,
+            transport: WatchSyncCoordinator()
         )
     }
     #endif
@@ -369,5 +381,32 @@ final class WatchSessionController {
             journalWriteFailed = true
         }
         state.apply(event)
+        emit(event)
+    }
+
+    /// Mirrors the event to the phone on both channels.
+    ///
+    /// Keyed off the journal's id rather than a separate one so the live
+    /// mirror and the durable checkpoint always describe the same session —
+    /// otherwise the phone would import a workout it had been mirroring under
+    /// a different identity and show it twice.
+    private func emit(_ event: SessionEvent) {
+        guard let journal, let transport else { return }
+
+        transport.sendLive(event, sessionID: journal.sessionID)
+
+        // Checkpoint on every event that is not heart rate: ~25 per session,
+        // each carrying the whole journal. Heart rate is ~700 per session and
+        // would swamp the transfer queue for no gain — it is already mirrored
+        // live above, and its durable form is HealthKit's. The receiver keeps
+        // the highest sequence, so extra transfers are harmless.
+        guard !event.isHeartRate else { return }
+        checkpointSeq += 1
+        transport.transferCheckpoint(SyncPayload(
+            sessionID: journal.sessionID,
+            checkpointSeq: checkpointSeq,
+            origin: .watch,
+            events: journal.events
+        ))
     }
 }

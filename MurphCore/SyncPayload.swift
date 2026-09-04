@@ -52,3 +52,12 @@ enum SessionMerge {
         incoming.checkpointSeq > storedSeq
     }
 }
+
+/// All three channels carry a single JSON blob under one key, which sidesteps
+/// WatchConnectivity's property-list type constraints entirely.
+enum SyncKey {
+    static let payload = "payload"
+    static let liveEvent = "liveEvent"
+    static let liveSessionID = "liveSessionID"
+    static let context = "context"
+}

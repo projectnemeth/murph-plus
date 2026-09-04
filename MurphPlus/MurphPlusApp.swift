@@ -5,6 +5,7 @@ import SwiftData
 @main
 struct MurphPlusApp: App {
     let container: ModelContainer
+    @State private var sync: PhoneSyncCoordinator
 
     init() {
         do {
@@ -25,11 +26,16 @@ struct MurphPlusApp: App {
         // a session by id, and a store with duplicated session ids would let
         // the first arriving checkpoint overwrite an arbitrary old workout.
         DuplicateSessionIdentityRepair.repair(context: container.mainContext)
+        // Built last: it activates `WCSession` immediately and its first act
+        // on activation is to push context read from this container, so every
+        // seed, migration and repair above must already have run.
+        _sync = State(initialValue: PhoneSyncCoordinator(container: container))
     }
 
     var body: some Scene {
         WindowGroup {
             RootTabView()
+                .environment(sync)
         }
         .modelContainer(container)
     }
