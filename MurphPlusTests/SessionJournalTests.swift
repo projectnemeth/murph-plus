@@ -110,4 +110,26 @@ final class SessionJournalTests: XCTestCase {
         XCTAssertNil(try SessionJournal.resumable(in: directory))
         XCTAssertTrue(try SessionJournal.all(in: directory).isEmpty)
     }
+
+    func test_resumableIgnoresAJournalWithNoEvents() throws {
+        // The journal file is created eagerly at init, before any event is
+        // appended — e.g. a session created at the setup screen and killed
+        // before the user taps Start. There is nothing to resume here.
+        _ = try SessionJournal(sessionID: UUID(), directory: directory)
+
+        XCTAssertNil(try SessionJournal.resumable(in: directory))
+    }
+
+    func test_allIgnoresStrayAndNonUUIDNamedFiles() throws {
+        let journal = try SessionJournal(sessionID: UUID(), directory: directory)
+        try journal.append(startedEvent)
+
+        try Data("hello".utf8).write(to: directory.appendingPathComponent("notes.txt"))
+        try Data("junk".utf8).write(to: directory.appendingPathComponent("garbage.journal"))
+
+        let found = try SessionJournal.all(in: directory)
+
+        XCTAssertEqual(found.count, 1)
+        XCTAssertEqual(found.first?.sessionID, journal.sessionID)
+    }
 }
