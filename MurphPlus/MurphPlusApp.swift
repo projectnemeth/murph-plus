@@ -17,6 +17,10 @@ struct MurphPlusApp: App {
         }
         try? DefaultTemplates.seedIfNeeded(context: container.mainContext)
         try? DefaultTemplateMigration.runIfNeeded(context: container.mainContext)
+        // Runs after seeding so a fresh install's templates are present, and
+        // unconditionally because it is self-healing — it acts only on ids that
+        // are genuinely duplicated.
+        DuplicateTemplateIdentityRepair.repair(context: container.mainContext)
     }
 
     var body: some Scene {

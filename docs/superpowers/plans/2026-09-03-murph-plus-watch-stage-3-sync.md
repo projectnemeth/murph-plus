@@ -289,7 +289,24 @@ git commit -m "feat: add sync payload envelopes and the checkpoint merge rule"
 
 - [ ] **Step 1: Add the model fields**
 
-`MurphSession.swift`:
+> ⚠️ **`id: UUID = UUID()` does NOT backfill uniquely, and here that is dangerous.**
+> This was confirmed empirically on a real upgraded install during Stage 1: adding
+> a `= UUID()` property to a model that already has rows makes SwiftData's
+> lightweight migration evaluate the default **once** and stamp every existing row
+> with the same value. Four templates ended up sharing one id.
+>
+> `MurphSession.id` is the dedup key for the entire sync protocol.
+> `SessionImporter` fetches by it (`#Predicate { $0.id == sessionID }`), so if every
+> pre-existing session shares one id, the first arriving checkpoint matches an
+> arbitrary old workout and **overwrites it** — destroying a logged record the app
+> promises is uneditable.
+>
+> **You must ship a repair pass alongside this field**, modelled on
+> `MurphPlus/Persistence/DuplicateTemplateIdentityRepair.swift` (added in Stage 1
+> for exactly this reason). Give every session a unique id before any importer
+> runs, and cover it with a test that inserts several sessions sharing one id and
+> asserts they end up distinct. Wire it into `MurphPlusApp.init` beside the
+> template repair.
 
 ```swift
     var id: UUID = UUID()
