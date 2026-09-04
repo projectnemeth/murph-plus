@@ -19,7 +19,7 @@ struct ControlsPage: View {
                                 value: "\(controller.state.completedRounds)/\(controller.state.template?.rounds ?? 0)")
             )
 
-            Spacer(minLength: 0)
+            Spacer(minLength: MurphSpacing.space3)
 
             VStack(spacing: MurphSpacing.space2) {
                 Button(controller.isPaused ? "Resume" : "Pause") {

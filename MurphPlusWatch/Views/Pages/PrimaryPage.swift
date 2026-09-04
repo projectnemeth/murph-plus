@@ -17,9 +17,9 @@ struct PrimaryPage: View {
                                 tone: MurphColor.lime500)
             )
 
-            Spacer(minLength: 0)
+            Spacer(minLength: MurphSpacing.space3)
             hero
-            Spacer(minLength: 0)
+            Spacer(minLength: MurphSpacing.space3)
 
             if controller.isPaused {
                 WatchPrimaryButton(title: "Resume") { controller.resume() }
