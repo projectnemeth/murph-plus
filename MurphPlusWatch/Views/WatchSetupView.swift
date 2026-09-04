@@ -60,7 +60,7 @@ struct WatchSetupView: View {
             .background(MurphColor.surfacePage)
             .navigationTitle("Murph+")
             .navigationDestination(isPresented: $showLive) {
-                WatchLiveView(controller: controller)
+                WatchLiveView(controller: controller, onDone: { showLive = false })
             }
         }
         .task {

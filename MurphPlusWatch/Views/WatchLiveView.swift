@@ -11,9 +11,22 @@ import SwiftUI
 /// changed underneath you; your position did not.
 struct WatchLiveView: View {
     @Bindable var controller: WatchSessionController
+    /// Called when the completion screen's Done button is tapped. Owned by
+    /// `WatchSetupView`, which pops all the way back to the setup screen —
+    /// popping only this view would strand the user on a live view for a
+    /// session that has already finished.
+    let onDone: () -> Void
 
     @State private var selection = 1          // Count page is the landing page
     @State private var showAbandonConfirm = false
+    // Real, writable presentation state. `controller.isFinished` never goes
+    // back to false on its own (there is no reset path on the controller
+    // short of `finishAndReset()`, which only runs after Done is tapped), so
+    // this can't just track it directly with `.constant(_:)` — that binding
+    // discards writes, which is exactly what made the completion screen's
+    // Done button a dead end. `onChange` below is the one-way sync from
+    // controller state into this real, poppable binding.
+    @State private var showComplete = false
     @Environment(\.isLuminanceReduced) private var isLuminanceReduced
 
     var body: some View {
@@ -48,8 +61,11 @@ struct WatchLiveView: View {
         } message: {
             Text("Your progress so far is kept.")
         }
-        .navigationDestination(isPresented: .constant(controller.isFinished)) {
-            WatchCompleteView(controller: controller)
+        .onChange(of: controller.isFinished) { _, isFinished in
+            if isFinished { showComplete = true }
+        }
+        .navigationDestination(isPresented: $showComplete) {
+            WatchCompleteView(controller: controller, onDone: onDone)
         }
     }
 

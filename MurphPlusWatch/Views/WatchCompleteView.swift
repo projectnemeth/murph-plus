@@ -8,7 +8,11 @@ import SwiftUI
 /// than no badge.
 struct WatchCompleteView: View {
     @Bindable var controller: WatchSessionController
-    @Environment(\.dismiss) private var dismiss
+    /// Runs after the controller has been reset. Owned by `WatchLiveView`,
+    /// which was handed it from `WatchSetupView` — Done needs to land all
+    /// the way back on Setup with a clean controller, not just pop this one
+    /// screen, so this is a passthrough rather than `@Environment(\.dismiss)`.
+    let onDone: () -> Void
 
     var body: some View {
         ScrollView {
@@ -46,9 +50,12 @@ struct WatchCompleteView: View {
                     row("Rounds", "\(controller.state.completedRounds) of \(controller.state.template?.rounds ?? 0)")
                 }
 
-                Button("Done") { dismiss() }
-                    .buttonStyle(.borderedProminent)
-                    .tint(MurphColor.lime500)
+                Button("Done") {
+                    controller.finishAndReset()
+                    onDone()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(MurphColor.lime500)
             }
             .padding(.horizontal, MurphSpacing.space2)
         }

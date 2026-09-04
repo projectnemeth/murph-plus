@@ -175,6 +175,20 @@ final class WatchSessionController {
         Task { await workout.finish() }
     }
 
+    /// Returns the controller to a clean slate once the completion screen has
+    /// been shown, so `WatchSetupView` can start a brand-new session right
+    /// away. Deliberately does **not** delete the on-disk journal — it holds
+    /// a completed (or abandoned) workout that a later stage syncs to the
+    /// phone; only the in-memory handle is dropped here. `workout` itself is
+    /// not touched: by the time this is called the workout session has
+    /// already been finished (see `advance()` and `abandon()`), so there is
+    /// nothing left on that side to reset.
+    func finishAndReset() {
+        journal = nil
+        state = SessionState()
+        journalWriteFailed = false
+    }
+
     // MARK: - Applying
 
     private func perform(_ result: Result<SessionEvent, SessionTransitionError>) {
