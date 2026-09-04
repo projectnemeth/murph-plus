@@ -137,11 +137,13 @@ struct SessionDetailView: View {
             HStack(alignment: .bottom) {
                 if session.status == .completed {
                     MurphClock(label: "Total time", seconds: session.totalElapsedSeconds ?? 0, size: .md)
+                } else if let elapsed = session.totalElapsedSeconds {
+                    MurphClock(label: "Stopped at", seconds: elapsed, size: .md)
                 } else {
-                    // Both startedAt and completedAt are set on abandon, so this
-                    // duration is real — the em-dash it replaced was discarding
-                    // data the session already had.
-                    MurphClock(label: "Stopped at", seconds: session.totalElapsedSeconds ?? 0, size: .md)
+                    // Abandoning before Start leaves startedAt nil, so there is no
+                    // real duration to show. An em-dash beats inventing a zero —
+                    // the progress line already says "Stopped before starting".
+                    MurphStatTile(label: "Stopped at", value: "\u{2014}", caption: "Never started")
                 }
                 Spacer()
                 MurphStatTile(label: "Reps", value: "\(session.template?.totalReps ?? 0)", alignTrailing: true)
