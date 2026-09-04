@@ -86,6 +86,17 @@ final class SessionProgressDescriberTests: XCTestCase {
         )
     }
 
+    /// Defensive: a never-started session is now discarded rather than
+    /// recorded, so this branch should be unreachable in the running app. It is
+    /// kept and asserted so the function stays total over `SessionPhase` — if
+    /// that rule ever changes, this is the string it changes back to.
+    func test_shortDescription_beforeStarting() {
+        XCTAssertEqual(
+            SessionProgressDescriber.shortDescription(phase: .notStarted, roundsCompleted: 0, totalRounds: 20),
+            "Not started"
+        )
+    }
+
     func test_shortDescription_completedIsNil() {
         XCTAssertNil(
             SessionProgressDescriber.shortDescription(phase: .completed, roundsCompleted: 20, totalRounds: 20)

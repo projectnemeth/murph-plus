@@ -162,9 +162,21 @@ struct LiveSessionView: View {
                 repsLabel: "\(template.pullUpsPerRound) pull-ups \u{00b7} \(template.pushUpsPerRound) push-ups \u{00b7} \(template.squatsPerRound) squats"
             )
         } else if phase == .notStarted, let template = session.template {
-            Text("\(template.runDistanceMiles.formatted(.number.precision(.fractionLength(2)))) mile run, \(template.totalPullUps) pull-ups, \(template.totalPushUps) push-ups, \(template.totalSquats) squats, \(template.runDistanceMiles.formatted(.number.precision(.fractionLength(2)))) mile run.")
-                .murphType(.bodyLg)
-                .foregroundStyle(MurphColor.textSecondary)
+            VStack(alignment: .leading, spacing: MurphSpacing.space2) {
+                Text("\(template.runDistanceMiles.formatted(.number.precision(.fractionLength(2)))) mile run, \(template.totalPullUps) pull-ups, \(template.totalPushUps) push-ups, \(template.totalSquats) squats, \(template.runDistanceMiles.formatted(.number.precision(.fractionLength(2)))) mile run.")
+                    .murphType(.bodyLg)
+                    .foregroundStyle(MurphColor.textSecondary)
+
+                // How the work is partitioned, stated rather than left as
+                // division. Once the rounds begin MurphRoundCounter shows the
+                // same breakdown under the round numeral; this is the view of
+                // it before the clock starts.
+                if template.rounds > 1 {
+                    Text("\(template.rounds) rounds of \(template.pullUpsPerRound) pull-ups \u{00b7} \(template.pushUpsPerRound) push-ups \u{00b7} \(template.squatsPerRound) squats")
+                        .murphType(.bodySm)
+                        .foregroundStyle(MurphColor.textAccent)
+                }
+            }
         } else if phase == .run1 || phase == .run2, let template = session.template {
             HStack(spacing: MurphSpacing.space4) {
                 Image(systemName: "figure.run")
