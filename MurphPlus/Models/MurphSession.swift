@@ -13,8 +13,19 @@ final class MurphSession {
     var notes: String?
     var startedAt: Date?
     var currentPhaseStartedAt: Date?
+    /// When the rounds phase began — the true boundary before round 1.
+    /// Persisted rather than derived from run 1's split, because that
+    /// derivation is net of pause and would land earlier than the real
+    /// boundary once a pause occurs during run 1, silently absorbing that
+    /// pause into round 1's duration. Nil for sessions that have not yet
+    /// finished run 1, and for sessions logged before this field existed.
+    var roundsStartedAt: Date?
     var completedAt: Date?
     var completedRounds: Int = 0
+    /// Written by the Watch in a later stage; stays `false` for phone sessions.
+    var indoor: Bool = false
+    var pausedSeconds: Double = 0
+    var pausedAt: Date?
 
     @Relationship(deleteRule: .cascade, inverse: \RunSplit.session)
     var runSplits: [RunSplit] = []
@@ -49,6 +60,6 @@ final class MurphSession {
 
     var totalElapsedSeconds: Double? {
         guard let startedAt, let completedAt else { return nil }
-        return completedAt.timeIntervalSince(startedAt)
+        return max(0, completedAt.timeIntervalSince(startedAt) - pausedSeconds)
     }
 }
