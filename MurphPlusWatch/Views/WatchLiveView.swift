@@ -11,6 +11,7 @@ import SwiftUI
 /// changed underneath you; your position did not.
 struct WatchLiveView: View {
     @Bindable var controller: WatchSessionController
+    var sync: WatchSyncCoordinator
     /// Called when the completion screen's Done button is tapped. Owned by
     /// `WatchSetupView`, which pops all the way back to the setup screen —
     /// popping only this view would strand the user on a live view for a
@@ -65,7 +66,7 @@ struct WatchLiveView: View {
             if isFinished { showComplete = true }
         }
         .navigationDestination(isPresented: $showComplete) {
-            WatchCompleteView(controller: controller, onDone: onDone)
+            WatchCompleteView(controller: controller, sync: sync, onDone: onDone)
         }
     }
 

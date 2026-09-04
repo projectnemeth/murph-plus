@@ -10,8 +10,15 @@ import SwiftUI
 /// settled state; showing the road not taken makes it read as a live choice.
 struct WatchSetupView: View {
     @Bindable var controller: WatchSessionController
+    var sync: WatchSyncCoordinator
 
-    @State private var templates: [TemplateSpec] = WatchSetupView.starterTemplates
+    /// Prefers what the phone has synced down, falling back to the starters.
+    /// The fallback matters on a Watch that has never connected: the user can
+    /// still do a Full Murph rather than staring at an empty list.
+    private var templates: [TemplateSpec] {
+        let synced = sync.context?.templates ?? []
+        return synced.isEmpty ? Self.starterTemplates : synced
+    }
     @State private var selected: TemplateSpec?
     @AppStorage("watchVestOn") private var vestOn = false
     @AppStorage("watchVestWeight") private var vestWeight = 20
@@ -71,7 +78,7 @@ struct WatchSetupView: View {
             }
             .background(MurphColor.surfacePage)
             .navigationDestination(isPresented: $showLive) {
-                WatchLiveView(controller: controller, onDone: { showLive = false })
+                WatchLiveView(controller: controller, sync: sync, onDone: { showLive = false })
             }
         }
         .sheet(isPresented: $showResumePrompt) {

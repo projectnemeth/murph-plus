@@ -20,6 +20,8 @@ struct LiveSessionView: View {
     let engine: SessionEngine
     let onFinished: () -> Void
 
+    @Environment(PhoneSyncCoordinator.self) private var sync
+
     @State private var showAbandonConfirm = false
 
     private var session: MurphSession { engine.session }
@@ -69,6 +71,11 @@ struct LiveSessionView: View {
                     // and so visibly inert — for the entire workout.
                     if phase == .completed {
                         MurphIconButton(label: "Close", systemImage: "xmark") {
+                            // A phone session that just finished may be the new
+                            // personal best, and the Watch badges from its
+                            // synced copy — without this it would keep badging
+                            // against a record this session has already beaten.
+                            sync.pushContext()
                             onFinished()
                         }
                     } else {

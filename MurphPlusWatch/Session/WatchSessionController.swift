@@ -56,11 +56,15 @@ final class WatchSessionController {
     /// `WorkoutSessionController` wraps `HKWorkoutSession`, which is
     /// watchOS-only — off the watch, injection is the only way in, which is
     /// exactly what the tests want.
-    convenience init() {
+    /// - Parameter sync: passed in rather than constructed here because
+    ///   `WatchSyncCoordinator` claims `WCSession.default.delegate`, and a
+    ///   second one would silently displace the first — the app owns exactly
+    ///   one and hands it to both the controller and the views.
+    convenience init(sync: WatchSyncCoordinator) {
         self.init(
             workout: WorkoutSessionController(),
             journalDirectory: Self.defaultJournalDirectory,
-            transport: WatchSyncCoordinator()
+            transport: sync
         )
     }
     #endif

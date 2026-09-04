@@ -8,11 +8,25 @@ import SwiftUI
 /// than no badge.
 struct WatchCompleteView: View {
     @Bindable var controller: WatchSessionController
+    var sync: WatchSyncCoordinator
     /// Runs after the controller has been reset. Owned by `WatchLiveView`,
     /// which was handed it from `WatchSetupView` — Done needs to land all
     /// the way back on Setup with a clean controller, not just pop this one
     /// screen, so this is a passthrough rather than `@Environment(\.dismiss)`.
     let onDone: () -> Void
+
+    /// Compared only against a record for the *same* vest setting — see
+    /// `PersonalBestCheck`. An abandoned session is never a best regardless of
+    /// its clock, because it did not finish the work.
+    private var isPersonalBest: Bool {
+        guard controller.state.status == .completed else { return false }
+        return PersonalBestCheck.isPersonalBest(
+            elapsed: SessionDerivation.elapsed(controller.state, now: .now),
+            templateID: controller.state.template?.id,
+            vestOn: controller.state.vestOn,
+            among: sync.context?.personalBests ?? []
+        )
+    }
 
     var body: some View {
         ScrollView {
@@ -31,6 +45,16 @@ struct WatchCompleteView: View {
                         .murphType(.micro)
                         .foregroundStyle(MurphColor.dust500)
                         .multilineTextAlignment(.center)
+                }
+
+                if isPersonalBest {
+                    Text("Personal best")
+                        .murphType(.micro)
+                        .foregroundStyle(MurphColor.ink1000)
+                        .padding(.horizontal, MurphSpacing.space2)
+                        .padding(.vertical, 3)
+                        .background(MurphColor.lime500)
+                        .clipShape(Capsule())
                 }
 
                 Text(totalText)

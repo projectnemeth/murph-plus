@@ -3,6 +3,7 @@ import SwiftUI
 import SwiftData
 
 struct SessionDetailView: View {
+    @Environment(PhoneSyncCoordinator.self) private var sync
     @Bindable var session: MurphSession
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -99,6 +100,9 @@ struct SessionDetailView: View {
                         context.delete(session)
                         do {
                             try context.save()
+                            // The deleted session may have held the personal
+                            // best, so the Watch's copy is now wrong.
+                            sync.pushContext()
                         } catch {
                             // A destructive action must not silently report success.
                             assertionFailure("Failed to delete session: \(error)")

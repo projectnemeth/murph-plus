@@ -3,6 +3,7 @@ import SwiftUI
 import SwiftData
 
 struct TemplateEditorView: View {
+    @Environment(PhoneSyncCoordinator.self) private var sync
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
 
@@ -100,6 +101,11 @@ struct TemplateEditorView: View {
                         )
                         context.insert(template)
                         try? context.save()
+                        // The Watch's template list is this list. Without the
+                        // push it keeps offering the old one until the next
+                        // launch, and a brand-new template is unreachable
+                        // there entirely.
+                        sync.pushContext()
                         dismiss()
                     }
                     .disabled(!isValid)
