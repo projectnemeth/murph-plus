@@ -19,6 +19,13 @@ import Observation
 /// Every capability here is optional to the app functioning. If authorization
 /// is denied, the session still runs to completion with no heart rate and no
 /// distance; nothing in this type may block the workout.
+///
+/// Isolated to the main actor: `HKLiveWorkoutBuilderDelegate` callbacks arrive
+/// on a HealthKit-managed background queue, but every stored property here is
+/// also touched from caller-invoked methods on the main actor. The delegate
+/// methods below are `nonisolated` and hop back to the main actor before
+/// touching any stored property, so all mutation is single-threaded.
+@MainActor
 @Observable
 final class WorkoutSessionController: NSObject {
     private let healthStore = HKHealthStore()
@@ -126,9 +133,13 @@ final class WorkoutSessionController: NSObject {
 }
 
 extension WorkoutSessionController: HKLiveWorkoutBuilderDelegate {
-    func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {}
+    // The protocol makes no main-actor promise, so these cannot inherit the
+    // class's isolation. Each one reads only from the `workoutBuilder`
+    // parameter (a HealthKit-managed, not our-stored, object) before hopping
+    // to the main actor to touch any property of `self`.
+    nonisolated func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {}
 
-    func workoutBuilder(
+    nonisolated func workoutBuilder(
         _ workoutBuilder: HKLiveWorkoutBuilder,
         didCollectDataOf collectedTypes: Set<HKSampleType>
     ) {
@@ -142,22 +153,27 @@ extension WorkoutSessionController: HKLiveWorkoutBuilderDelegate {
                 else { continue }
 
                 let rounded = Int(bpm.rounded())
-                currentHeartRate = rounded
+                Task { @MainActor in
+                    self.currentHeartRate = rounded
 
-                // Live display updates every sample; the journal gets one every
-                // 5 seconds, which is ~700 events across a long Murph.
-                let now = Date.now
-                if lastHeartRateEmit.map({ now.timeIntervalSince($0) >= Self.heartRateThrottle }) ?? true {
-                    lastHeartRateEmit = now
-                    onHeartRate?(rounded)
+                    // Live display updates every sample; the journal gets one
+                    // every 5 seconds, which is ~700 events across a long Murph.
+                    let now = Date.now
+                    if self.lastHeartRateEmit.map({ now.timeIntervalSince($0) >= Self.heartRateThrottle }) ?? true {
+                        self.lastHeartRateEmit = now
+                        self.onHeartRate?(rounded)
+                    }
                 }
             }
 
-            if quantityType == distanceType, isInRunActivity {
-                // Distance accumulated during the rounds is discarded rather
-                // than added to a run — pacing between pull-up sets must not
-                // inflate the mile.
-                currentRunDistanceMeters = max(0, currentTotalDistance() - distanceAtRunStart)
+            if quantityType == distanceType {
+                Task { @MainActor in
+                    guard self.isInRunActivity else { return }
+                    // Distance accumulated during the rounds is discarded
+                    // rather than added to a run — pacing between pull-up
+                    // sets must not inflate the mile.
+                    self.currentRunDistanceMeters = max(0, self.currentTotalDistance() - self.distanceAtRunStart)
+                }
             }
         }
     }
