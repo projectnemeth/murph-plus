@@ -160,6 +160,11 @@ struct StartView: View {
 }
 
 #Preview {
-    StartView { _, _, _ in }
-        .modelContainer(for: [WorkoutTemplate.self, MurphSession.self, RunSplit.self, RoundLog.self], inMemory: true)
+    let container = try! ModelContainer(
+        for: WorkoutTemplate.self, MurphSession.self, RunSplit.self, RoundLog.self,
+        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+    )
+    return StartView { _, _, _ in }
+        .modelContainer(container)
+        .environment(PhoneSyncCoordinator(container: container))
 }
