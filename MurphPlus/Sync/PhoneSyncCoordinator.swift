@@ -55,19 +55,51 @@ final class PhoneSyncCoordinator: NSObject {
 
     /// The durable path, and the only one that may create a `MurphSession`.
     private func ingest(_ data: Data) {
-        guard let payload = try? JSONDecoder().decode(SyncPayload.self, from: data) else { return }
-        let context = ModelContext(container)
-        try? SessionImporter.apply(payload, context: context)
+        // Both failure paths below are logged rather than swallowed. A decode
+        // failure is realistic — the user updates the Watch app but not the
+        // phone app and `SessionEvent` gains a case — and it drops every
+        // checkpoint of every session with no signal at all.
+        guard let payload = try? JSONDecoder().decode(SyncPayload.self, from: data) else {
+            NSLog("MurphPlus sync: checkpoint could not be decoded — dropped")
+            return
+        }
+
+        // `mainContext`, not a fresh `ModelContext`: `ingest` is already on the
+        // main actor, and this is the context the rest of the app uses. A
+        // separate one would leave imported sessions depending on cross-context
+        // merge to reach the `@Query`-backed History screen.
+        let landed: MurphSession?
+        do {
+            landed = try SessionImporter.apply(payload, context: container.mainContext)
+        } catch {
+            NSLog("MurphPlus sync: checkpoint could not be imported — \(error.localizedDescription)")
+            return
+        }
+
+        // `landed` is nil only when the payload changed nothing: a stale or
+        // duplicate sequence, or a journal that replays without a template.
+        guard SessionState.replay(payload.events).isTerminal, landed != nil else { return }
 
         // The session has landed in history, so stop mirroring it — otherwise
         // the phone shows the finished workout twice, once live and once real.
-        if SessionState.replay(payload.events).isTerminal {
-            mirror.markFinished(sessionID: payload.sessionID)
-        }
+        //
+        // Gated on the import actually having produced a session, because
+        // `markFinished` is irreversible: it records the id in `finished`,
+        // which blocks any later re-mirroring. Running it on a failed import
+        // would lose the terminal checkpoint *and* wipe the mirror — the only
+        // remaining on-screen trace of that workout. Skipping it on a stale
+        // terminal checkpoint is safe: a higher sequence is already stored, and
+        // that one was terminal too, so the id was marked when it arrived.
+        mirror.markFinished(sessionID: payload.sessionID)
 
         // A landed session may have set a new record, and the Watch badges its
         // completion screen from this context. Without the push, the next
         // Watch workout is judged against a record it has already been beaten by.
+        //
+        // Only a terminal checkpoint can move a personal best, and `pushContext`
+        // fetches every `MurphSession` and every `WorkoutTemplate` on the main
+        // actor — so the other ~24 checkpoints of a workout would each buy a
+        // full history scan for a result that cannot have changed.
         pushContext()
     }
 }
