@@ -15,9 +15,11 @@ struct HistoryView: View {
     // in the store forever, rendering here as a stray row showing "—".
     @Query(sort: \MurphSession.date, order: .reverse) private var allSessions: [MurphSession]
 
+    @Environment(\.modelContext) private var context
     @State private var mode: Mode = .list
     @State private var displayedMonth: Date = .now
     @State private var selectedSession: MurphSession?
+    @State private var stuck: [MurphSession] = []
 
     private let calendar = Calendar.current
 
@@ -36,6 +38,19 @@ struct HistoryView: View {
                     MurphScreenTitle(title: "History")
 
                     VStack(alignment: .leading, spacing: MurphSpacing.gapSection) {
+                        if !stuck.isEmpty {
+                            VStack(alignment: .leading, spacing: MurphSpacing.space3) {
+                                MurphBanner(
+                                    tone: .warn,
+                                    text: "\(stuck.count) Apple Watch session\(stuck.count == 1 ? "" : "s") never finished. The Watch stopped sending before the workout ended."
+                                )
+                                MurphButton(variant: .secondary, full: true, title: "Move to history as abandoned") {
+                                    for session in stuck { StuckWatchSessionReaper.abandon(session, context: context) }
+                                    stuck = StuckWatchSessionReaper.stuckSessions(context: context)
+                                }
+                            }
+                        }
+
                         MurphSegmentedControl(options: Mode.allCases.map(\.rawValue), selection: Binding(
                             get: { mode.rawValue },
                             set: { mode = Mode(rawValue: $0) ?? .list }
@@ -59,6 +74,7 @@ struct HistoryView: View {
                 SessionDetailView(session: session)
             }
         }
+        .onAppear { stuck = StuckWatchSessionReaper.stuckSessions(context: context) }
     }
 
     // MARK: - List
