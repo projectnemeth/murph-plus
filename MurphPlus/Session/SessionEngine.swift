@@ -74,6 +74,19 @@ final class SessionEngine {
     /// A session that *did* start is always kept, however little it recorded:
     /// that is a real attempt, and the log is the record of it.
     func abandon() {
+        // Abandoning while paused must not leave the pause open: `.abandoned`
+        // never closes one itself, and `session.pausedSeconds` is only ever
+        // incremented by `.resumed`. Without this, an open pause is silently
+        // dropped from `totalElapsedSeconds` — the logged "Stopped at" time
+        // would read too high by exactly the open pause's length. Route a
+        // synthetic resume through the same `perform`/`applyToModel` path the
+        // real resume takes, so `state.pausedIntervals`,
+        // `session.pausedSeconds`, and `session.pausedIntervalsData` all stay
+        // consistent — and so the event stream (a future Watch journal) never
+        // records an unclosed `paused` followed by `abandoned`.
+        if isPaused {
+            perform(SessionStateMachine.resume(state, at: .now))
+        }
         perform(SessionStateMachine.abandon(state, at: .now))
     }
 
@@ -113,7 +126,11 @@ final class SessionEngine {
 
         case let .runFinished(index, _, _):
             // `state` already computed the split net of pause; mirror it.
-            if let split = state.runSplits.last {
+            // Guarded on the split's own index (not just its presence) so a
+            // stale `runSplits.last` — e.g. run 1's split, still sitting there
+            // because this `.runFinished` produced no new split — can never
+            // be persisted a second time under `index`'s identity.
+            if let split = state.runSplits.last, split.index == index {
                 let model = RunSplit(
                     runIndex: split.index,
                     startTime: split.startTime,

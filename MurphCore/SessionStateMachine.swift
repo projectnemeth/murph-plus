@@ -44,6 +44,12 @@ enum SessionStateMachine {
         if let error = guardActive(state) { return .failure(error) }
         guard !state.isPaused else { return .failure(.sessionIsPaused) }
         guard state.phase == .run1 || state.phase == .run2 else { return .failure(.wrongPhase) }
+        // A run split can only be timed from a phase start. Without this, a
+        // `run2` with no `currentPhaseStartedAt` (reached via a state
+        // `apply` that advances phase unconditionally) would still emit
+        // `.runFinished`, and the adapter would fabricate a duplicate split
+        // and a false completion.
+        guard state.currentPhaseStartedAt != nil else { return .failure(.wrongPhase) }
         let index = state.phase == .run1 ? 1 : 2
         return .success(.runFinished(index: index, at: now, distanceMeters: distanceMeters))
     }

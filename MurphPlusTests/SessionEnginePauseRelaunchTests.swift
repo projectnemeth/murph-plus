@@ -132,4 +132,69 @@ final class SessionEnginePauseRelaunchTests: XCTestCase {
         let engine2 = SessionEngine(session: engine1.session, context: context)
         XCTAssertTrue(engine2.isPaused)
     }
+
+    /// Finding 3, case 1: the logged total on a *completed* session must be
+    /// net of a real, measurable pause — the user-visible promise pause
+    /// exists to keep, and (before this fix wave) entirely unverified at the
+    /// `MurphSession` level.
+    func test_completedSessionWithARealPauseLogsATotalNetOfIt() throws {
+        let template = WorkoutTemplate(name: "Test", rounds: 1)
+        context.insert(template)
+        let engine = SessionEngine.startNew(template: template, vestOn: false, vestWeightLbs: nil, context: context)
+
+        engine.start()
+        engine.pause()
+        Thread.sleep(forTimeInterval: 0.25)
+        engine.resume()
+        engine.finishRun()
+        engine.completeRound()
+        engine.finishRun()
+
+        let session = engine.session
+        XCTAssertEqual(session.status, .completed)
+
+        let startedAt = try XCTUnwrap(session.startedAt)
+        let completedAt = try XCTUnwrap(session.completedAt)
+        let grossElapsed = completedAt.timeIntervalSince(startedAt)
+        let totalElapsed = try XCTUnwrap(session.totalElapsedSeconds)
+
+        // The logged total is exactly the gross span minus the persisted
+        // pause total — not a coincidence, but restated here so a future
+        // change to `totalElapsedSeconds`'s formula cannot drift silently.
+        XCTAssertEqual(totalElapsed, grossElapsed - session.pausedSeconds, accuracy: 0.01)
+        // And that subtraction must be *measurable*, not a no-op: this is
+        // the whole reason pause exists.
+        XCTAssertGreaterThan(grossElapsed - totalElapsed, 0.15, "the logged total must exclude the paused stretch")
+    }
+
+    /// Finding 1 / Finding 3, case 2: abandoning while paused must close the
+    /// open pause rather than lose it. Before the fix, `.abandoned` never
+    /// closed `session.pausedAt` and never added the open stretch to
+    /// `session.pausedSeconds` (only `.resumed` did that) — so History would
+    /// show a "Stopped at" time inflated by the entire time the user was
+    /// paused before tapping Abandon.
+    func test_abandoningWhilePausedExcludesTheOpenPauseFromTheLoggedTotal() throws {
+        let template = WorkoutTemplate(name: "Test", rounds: 2)
+        context.insert(template)
+        let engine = SessionEngine.startNew(template: template, vestOn: false, vestWeightLbs: nil, context: context)
+
+        engine.start()
+        engine.pause()
+        Thread.sleep(forTimeInterval: 0.25)
+        engine.abandon()
+
+        XCTAssertEqual(engine.session.status, .abandoned)
+        XCTAssertNil(engine.session.pausedAt, "abandon must close the open pause, not leave it dangling forever")
+        XCTAssertGreaterThan(engine.session.pausedSeconds, 0.15, "the open pause must be folded into pausedSeconds, not dropped")
+
+        let startedAt = try XCTUnwrap(engine.session.startedAt)
+        let completedAt = try XCTUnwrap(engine.session.completedAt)
+        let grossElapsed = completedAt.timeIntervalSince(startedAt)
+        let totalElapsed = try XCTUnwrap(engine.session.totalElapsedSeconds)
+
+        // Without the fix, `pausedSeconds` stays 0, so `totalElapsedSeconds`
+        // would equal the full gross span — including the ~0.25s the user
+        // spent paused before tapping Abandon.
+        XCTAssertGreaterThan(grossElapsed - totalElapsed, 0.15, "the open pause must still be excluded from the logged total")
+    }
 }

@@ -124,4 +124,39 @@ final class RoundThroughputPauseTests: XCTestCase {
         XCTAssertEqual(throughputs.count, 1)
         XCTAssertEqual(throughputs[0].secondsForRound, 20)
     }
+
+    /// Finding 3, case 3: `SessionDerivation.roundDurations` (folds the event
+    /// stream, in `MurphCore`) and `RoundThroughputBuilder.build` (reads
+    /// persisted `RoundLog`s, on the phone) now compute the same per-round
+    /// durations by two different routes, and both feed the fatigue-curve
+    /// fit. Nothing but this test stops a later stage changing one without
+    /// the other.
+    func test_roundDerivationAgreesWithRoundThroughputBuilder() throws {
+        let template = WorkoutTemplate(name: "Test", rounds: 3)
+        context.insert(template)
+        let engine = SessionEngine.startNew(template: template, vestOn: false, vestWeightLbs: nil, context: context)
+
+        engine.start()
+        engine.pause()
+        Thread.sleep(forTimeInterval: 0.2)
+        engine.resume()
+        engine.finishRun()
+
+        engine.completeRound()
+        engine.pause()
+        Thread.sleep(forTimeInterval: 0.2)
+        engine.resume()
+        engine.completeRound()
+        engine.completeRound()
+        engine.finishRun()
+
+        let derived = SessionDerivation.roundDurations(engine.state)
+        let built = RoundThroughputBuilder.build(session: engine.session)
+
+        XCTAssertEqual(derived.count, 3)
+        XCTAssertEqual(built.count, 3)
+        for (duration, throughput) in zip(derived, built) {
+            XCTAssertEqual(Int(duration.rounded()), throughput.secondsForRound)
+        }
+    }
 }
