@@ -64,6 +64,11 @@ final class PhoneSyncCoordinator: NSObject {
         if SessionState.replay(payload.events).isTerminal {
             mirror.markFinished(sessionID: payload.sessionID)
         }
+
+        // A landed session may have set a new record, and the Watch badges its
+        // completion screen from this context. Without the push, the next
+        // Watch workout is judged against a record it has already been beaten by.
+        pushContext()
     }
 }
 
