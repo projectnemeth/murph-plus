@@ -420,7 +420,11 @@ final class WatchSessionController {
     func reconcileJournals(acknowledged: Set<UUID>) {
         guard let journals = try? SessionJournal.all(in: journalDirectory) else { return }
 
-        var pending: [SessionJournal] = []
+        // `journal.state` replays the whole journal on every read, and these
+        // run on the main actor at launch — so each one is replayed once here
+        // and the result carried, rather than being asked for again by the
+        // terminality check and then a third time by the sort.
+        var pending: [(journal: SessionJournal, startedAt: Date)] = []
 
         for journal in journals {
             // Never the session this controller is running: its journal is
@@ -443,8 +447,9 @@ final class WatchSessionController {
             // one's. Resending it would be sending a session the user has not
             // decided the fate of yet, and deleting it would discard a workout
             // they may be about to continue.
-            guard journal.state.isTerminal else { continue }
-            pending.append(journal)
+            let state = journal.state
+            guard state.isTerminal else { continue }
+            pending.append((journal, state.startedAt ?? .distantPast))
         }
 
         guard let transport, !pending.isEmpty else { return }
@@ -452,8 +457,9 @@ final class WatchSessionController {
         // Oldest first: the longest-stuck workout is the one most likely to be
         // lost to something else before the next pass.
         let batch = pending
-            .sorted { ($0.state.startedAt ?? .distantPast) < ($1.state.startedAt ?? .distantPast) }
+            .sorted { $0.startedAt < $1.startedAt }
             .prefix(Self.resendBatchLimit)
+            .map(\.journal)
 
         SyncLog.note(
             "resending \(batch.count) of \(pending.count) unacknowledged journal(s)"
