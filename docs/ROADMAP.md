@@ -8,14 +8,31 @@ about the cause, and where to start — so it can be picked up cold.
 
 ## Watch sync — from the hardware matrix (2026-09-04)
 
-The first paired-device pass over Watch Stage 3. **5 pass, 4 fail, 3 not run.**
-Results with the original per-test notes:
+The first paired-device pass over Watch Stage 3. **5 pass, 4 fail, 3 not run —
+then test 08's pass was withdrawn, see below.** Results with the original
+per-test notes:
 https://claude.ai/code/artifact/1c056016-b5ec-429d-9c0b-114408ea30db
 
 Confirmed working on real hardware, so don't re-litigate these: the session lands
 in History without a relaunch (the `mainContext` switch), the personal-best badge
-holds, the cold-launch activation race is closed, pause accounting survives the
-journal round trip, and every round logged out of Bluetooth range arrives.
+holds, the cold-launch activation race is closed, and pause accounting survives
+the journal round trip.
+
+### Test method correction — read before re-running anything in group B
+
+Test 08 ("walk out of Bluetooth range") was run using **iOS Control Center's
+Bluetooth button, which does not disconnect an Apple Watch** — it drops other
+accessories while deliberately preserving Watch, Handoff and Continuity. The link
+was never severed, so that pass proved nothing and has been withdrawn.
+
+The instruction was wrong independently of how it was carried out: **Watch and
+iPhone also communicate over Wi-Fi**, so even genuinely walking out of Bluetooth
+range passes spuriously whenever both devices sit on the same network. Turning
+Bluetooth off in Settings is not sufficient either.
+
+The reliable sever is **Airplane Mode on the Watch**, confirmed by the
+disconnected glyph appearing on the watch face — the glyph, not the toggle, is the
+evidence.
 
 ### 1. A completed workout was lost across a phone reboot — HIGH
 
@@ -27,11 +44,11 @@ nothing.
 
 What is already known:
 
-- **Test 08 passed**, and it exercises the same queued `transferUserInfo`. The
-  difference is that out-of-range keeps the phone powered with its app alive,
-  while 09 needs the phone's `WCSession` to re-activate and drain the queue after
-  boot. That points away from "the Watch never sent" and toward delivery on the
-  phone side.
+- **There is no evidence the durable channel queues at all when the phone is
+  unreachable.** Test 08 was the only other check of that property, and its pass
+  was withdrawn (see the method correction above) — so 08 and 09 may be a single
+  root cause rather than two problems. Re-running 08 properly is the cheapest way
+  to find out, and it needs no reboot.
 - **Prime suspect is a regression from the review-fix wave.** The
   `activationState == .activated` guard added to
   `WatchSyncCoordinator.transferCheckpoint` returns early **with no log**. If the
@@ -43,7 +60,10 @@ What is already known:
   never delivered.
 
 **Start here:** instrumentation, not a fix. See item 2 below; the diagnosis is
-blocked on it and cannot be settled by reading.
+blocked on it and cannot be settled by reading. Then re-run 08 (Airplane Mode on
+the Watch) before 09 — it exercises the same queuing property in two minutes
+instead of a reboot cycle, and tells you immediately whether this is one bug or
+two.
 
 **Worth designing together with the journal-retention item (§7):** a "resend any
 journal the phone has not acknowledged" pass would both recover workouts lost this
@@ -104,6 +124,9 @@ Watch · Tap to follow along", and it did not read as tappable during testing.
 
 None is testable as shipped. Make the edit, run the check, revert before
 committing:
+
+Test 08 also needs re-running — not for a code change, but because its first run
+used a disconnect method that doesn't disconnect. See the method correction above.
 
 | Test | Edit | What it proves |
 |---|---|---|
