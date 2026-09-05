@@ -194,3 +194,95 @@ was). And two of Task 1's three deferred minors remain — the degenerate-input
 tests for an empty `events` array and a journal not starting with `.started`.
 The third, the undocumented "checkpointSeq starts at 1" invariant, is now
 documented at the point that depends on it.
+
+---
+
+# Addendum — the review-fix plan is complete (2026-09-04, later session)
+
+`docs/superpowers/plans/2026-09-04-watch-stage-3-review-fixes.md` has been executed
+end to end. All nine tasks are implemented, each with its own task review, and the
+whole branch has had a final review with one fix wave on top.
+
+**State:** `5af0a68..0067515`, 32 commits. iOS **246 tests / 0 failures**, watch
+**BUILD SUCCEEDED**. PR #1 is still open and still unmerged.
+
+## What the plan itself got wrong
+
+Three of its own instructions were defective and were corrected during execution:
+
+- **Task 5's tests called a fixture helper that does not exist** (`payload(template:)`);
+  the real one is `payload(_:seq:rounds:finished:id:)`. Assertions kept, call adapted.
+- **Task 9's arithmetic was wrong.** It built 1,440 heart-rate samples ("two hours")
+  and asserted the payload exceeds 65,536 bytes. It measures **59,362** — an encoded
+  event costs ~41 bytes, not the ~46 assumed. The crossing point is ~1,600 samples,
+  about **2h13m**, not two hours. The test now uses 1,800 samples with the measured
+  cost recorded in its comment. The defect is real; its threshold is later than the
+  plan claims.
+- **Task 9 told both coordinators to implement sender-side `didFinish` handlers.**
+  The phone sends neither userInfo nor files, so those would never fire. Watch only.
+
+## What the final review found that no task review could
+
+A **Critical** the per-task reviews structurally could not see, because it lives in the
+interaction between two tasks and the app's object lifetime:
+
+`checkpointSeq` was instance state on a controller the app keeps for its whole life
+(`MurphPlusWatchApp` holds it in `@State`), but `finishAndReset()` never reset it while
+both restore sites assign it *absolutely* from a per-journal count. So a second session
+in one launch started high — phone stores seq 11 — and a later relaunch-and-resume
+restored 3, after which every checkpoint including the terminal one failed the
+strictly-greater rule and the phone kept the session `.inProgress` forever, hidden from
+history. It defeated commits 6e932fa and 84d722d simultaneously.
+
+Fixed by resetting the counter in `openJournal()` (commit 0e20199), which incidentally
+closed a second leak: `abandonResumableSession` set a high sequence without setting
+`self.journal`, and that used to bleed into the next same-launch session.
+
+**No test caught it because every relaunch test builds a fresh controller — none of them
+modelled the app's real object lifetime.** There is now one that does:
+`test_aSecondSessionInTheSameLaunchStartsAFreshSequenceSpace`.
+
+Five Importants went in with it: the phone's durable receive path was failing silently
+and clearing the mirror even when the import had not landed (now logged and gated, and
+writing through `container.mainContext` so imported sessions reach the `@Query`-backed
+History screen without relying on cross-context merge); the personal-best badge was
+being cancelled by our own post-import context push (`X < X`), now frozen at
+`.onAppear`; `transferCheckpoint` was firing before `WCSession` activation completed;
+and the oversize threshold used the exact 65,536 ceiling, which covers the whole
+serialized dictionary rather than the `Data` inside it — now 60,000.
+
+## Still open
+
+**Stage 3 Task 7, the hardware matrix, is still NOT run** and still needs a physically
+paired iPhone and Apple Watch. Its brief is in the sibling workspace
+`.superpowers/sdd/2026-09-03-murph-plus-watch-stage-3-sync/task-7-brief.md`. Four things
+the final review could only defer to it:
+
+1. That an imported watch session really does appear in History without a relaunch.
+   The `mainContext` switch was made specifically to remove this risk, but it is
+   unverified on device.
+2. Whether `transferUserInfo`/`transferFile` before activation throws or merely no-ops.
+3. The real serialized size of `[SyncKey.payload: data]` against `data.count` at the
+   boundary.
+4. That `WCSessionFileTransfer.file.fileURL` in `didFinish` is the staged URL and not a
+   system copy — deleting the wrong one would be silent.
+
+**Parked, with reasoning, deliberately not fixed:**
+
+- **Watch journals accumulate forever with no retention policy**, and every launch
+  decodes all of them on the main actor (`SessionJournal.all` fully decodes each file,
+  and `WatchSetupView` calls it on appear). ~60-75 KB per journal. Degrades over months;
+  needs a retention decision beyond a fix plan's remit.
+- The resume test does not actually pin `checkpointSequence`'s `!isHeartRate` filter —
+  its assertion passes with or without it. Shipping code is correct, and dropping the
+  filter would make the sequence too *high*, which the merge rule tolerates. One-line
+  remedy: `XCTAssertEqual(afterResume, beforeCrash + 1)`.
+- `SessionImporterTests` builds `ModelContext(container)` while `ingest` now ships
+  against `container.mainContext`, so `apply` is not exercised against the flavour that
+  ships.
+- The six-hour stuck-session threshold has no boundary test. Its direction is pinned by
+  tests either side; exact-equality behaviour on a wall-clock heuristic is a documented
+  judgement call, and a test there would convert it into a contract.
+- Smaller: the mirror pops the user out with no completion feedback; `SessionTransport`
+  declares three closures nothing assigns; `resumable()` does not sort by mtime; a
+  staged checkpoint file leaks if the watch app is killed mid-transfer.
