@@ -10,9 +10,6 @@ final class FakeSessionTransport: SessionTransport {
     private(set) var checkpoints: [SyncPayload] = []
     private(set) var contexts: [SyncContext] = []
 
-    var onLiveEvent: ((UUID, SessionEvent) -> Void)?
-    var onCheckpoint: ((SyncPayload) -> Void)?
-    var onContext: ((SyncContext) -> Void)?
 
     func sendLive(_ event: SessionEvent, sessionID: UUID) {
         liveEvents.append((sessionID, event))
@@ -188,9 +185,14 @@ final class WatchSyncEmissionTests: XCTestCase {
         resumed.advance()                          // logs round 2
 
         let afterResume = try XCTUnwrap(resumedTransport.checkpoints.last).checkpointSeq
-        XCTAssertGreaterThan(
-            afterResume, beforeCrash,
-            "A post-resume checkpoint must outrank the last one the phone stored"
+        // Exactly one more, not merely more. `>` passes whether or not
+        // `checkpointSequence` filters heart-rate events out — with the filter
+        // gone the resumed sequence restarts from 6 rather than 3, which is
+        // still greater than 3 and still wrong. The three heart-rate events
+        // asserted above are what makes the two numbers differ.
+        XCTAssertEqual(
+            afterResume, beforeCrash + 1,
+            "A post-resume checkpoint continues the sequence, one step on from the last"
         )
     }
 

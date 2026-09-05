@@ -15,10 +15,6 @@ final class WatchSyncCoordinator: NSObject, SessionTransport {
     /// Latest template list and personal bests pushed down by the phone.
     private(set) var context: SyncContext?
 
-    var onLiveEvent: ((UUID, SessionEvent) -> Void)?
-    var onCheckpoint: ((SyncPayload) -> Void)?
-    var onContext: ((SyncContext) -> Void)?
-
     var isReachable: Bool {
         WCSession.isSupported() && WCSession.default.isReachable
     }
@@ -97,9 +93,12 @@ final class WatchSyncCoordinator: NSObject, SessionTransport {
             // Same guarantee, no ceiling. The oversize case is the *final*
             // checkpoint of a long workout — the one that marks it complete —
             // so dropping it would lose the whole session on the phone.
-            let url = FileManager.default.temporaryDirectory
+            let url = Self.stagingDirectory
                 .appendingPathComponent("checkpoint-\(payload.sessionID)-\(payload.checkpointSeq).json")
             do {
+                try FileManager.default.createDirectory(
+                    at: Self.stagingDirectory, withIntermediateDirectories: true
+                )
                 try data.write(to: url)
             } catch {
                 SyncLog.checkpointDropped(
@@ -121,6 +120,47 @@ final class WatchSyncCoordinator: NSObject, SessionTransport {
             sessionID: sessionID, seq: seq, bytes: data.count,
             carrier: .userInfo, reachable: reachable
         )
+    }
+
+    /// Oversize checkpoints are staged here rather than loose in `tmp`.
+    ///
+    /// A directory of our own is what makes the cleanup safe to write at all:
+    /// the sweep below deletes files it did not create only if it cannot tell
+    /// them apart, and `didFinish` can check that the URL it is handed is
+    /// really ours before removing it. Prefix-matching filenames in the shared
+    /// temporary directory could not offer either guarantee.
+    static let stagingDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("checkpoint-staging", isDirectory: true)
+
+    /// Removes staged files that no transfer is waiting on.
+    ///
+    /// A staged file is deleted when its transfer finishes — but if the Watch
+    /// app is killed mid-transfer that callback never comes, and the file stays
+    /// on disk for the life of the install. Each is a whole journal, so they
+    /// are not small.
+    ///
+    /// Runs after activation, because `outstandingFileTransfers` is what makes
+    /// it safe: a queued transfer that has not been delivered yet still needs
+    /// its file, and this is the difference between cleaning up and losing the
+    /// checkpoint that completes a workout.
+    private func sweepStagedCheckpoints() {
+        let manager = FileManager.default
+        guard
+            let staged = try? manager.contentsOfDirectory(
+                at: Self.stagingDirectory, includingPropertiesForKeys: nil
+            )
+        else { return }
+
+        let pending = Set(
+            WCSession.default.outstandingFileTransfers.map(\.file.fileURL.standardizedFileURL)
+        )
+        var removed = 0
+        for url in staged where !pending.contains(url.standardizedFileURL) {
+            if (try? manager.removeItem(at: url)) != nil { removed += 1 }
+        }
+        if removed > 0 {
+            SyncLog.note("swept \(removed) staged checkpoint file(s) left by an interrupted transfer")
+        }
     }
 
     /// `WCSessionActivationState` has no useful description, and the raw value
@@ -153,7 +193,10 @@ extension WatchSyncCoordinator: WCSessionDelegate {
         activationDidCompleteWith state: WCSessionActivationState,
         error: Error?
     ) {
-        Task { @MainActor in self.decodeStoredContext() }
+        Task { @MainActor in
+            self.decodeStoredContext()
+            self.sweepStagedCheckpoints()
+        }
     }
 
     nonisolated func session(
@@ -163,7 +206,6 @@ extension WatchSyncCoordinator: WCSessionDelegate {
         Task { @MainActor in
             guard let decoded = try? JSONDecoder().decode(SyncContext.self, from: data) else { return }
             self.context = decoded
-            self.onContext?(decoded)
         }
     }
 
@@ -197,6 +239,13 @@ extension WatchSyncCoordinator: WCSessionDelegate {
         } else {
             SyncLog.note("file transfer delivered")
         }
-        try? FileManager.default.removeItem(at: fileTransfer.file.fileURL)
+
+        // Only ever our own staging directory. Whether `fileTransfer.file.fileURL`
+        // is the URL we handed over or a system-owned copy is not documented,
+        // and deleting something belonging to WatchConnectivity would fail
+        // silently in exactly the place this app can least afford silence.
+        let url = fileTransfer.file.fileURL.standardizedFileURL
+        guard url.path.hasPrefix(Self.stagingDirectory.standardizedFileURL.path) else { return }
+        try? FileManager.default.removeItem(at: url)
     }
 }

@@ -67,10 +67,30 @@ final class SessionJournal {
             .map { try SessionJournal(sessionID: $0, directory: directory) }
     }
 
-    /// The one unfinished session, if any — a journal whose replayed state is
-    /// not terminal. The Watch offers resume or abandon for this on launch.
+    /// The unfinished session to offer on launch — the **most recently
+    /// started** one, if any.
+    ///
+    /// "The one unfinished session" was an assumption, not a guarantee. A
+    /// journal only becomes terminal when the user finishes or abandons it, and
+    /// the launch prompt is the sole way to abandon one — so a user who
+    /// dismisses the prompt (or is killed before answering) and starts a fresh
+    /// workout leaves two behind. `contentsOfDirectory` returns them in no
+    /// defined order, so which one the prompt offered was effectively arbitrary:
+    /// "Workout in progress · Resume" could hand back last week's.
+    ///
+    /// Ordered on the journal's own `startedAt` rather than the file's
+    /// modification date. It says the same thing here — appends only ever move
+    /// mtime forward — and it cannot be perturbed by a backup, a restore or a
+    /// file copy, none of which change what the journal says about itself.
     static func resumable(in directory: URL) throws -> SessionJournal? {
-        try all(in: directory).first { !$0.state.isTerminal && $0.state.startedAt != nil }
+        try all(in: directory)
+            .compactMap { journal -> (SessionJournal, Date)? in
+                let state = journal.state
+                guard !state.isTerminal, let startedAt = state.startedAt else { return nil }
+                return (journal, startedAt)
+            }
+            .max { $0.1 < $1.1 }?
+            .0
     }
 
     private static func decodeLines(at url: URL) throws -> [SessionEvent] {

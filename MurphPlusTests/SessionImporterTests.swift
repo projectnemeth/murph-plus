@@ -3,19 +3,33 @@ import XCTest
 import SwiftData
 @testable import MurphPlus
 
+/// `@MainActor` so the container's `mainContext` can be reached — see
+/// `setUpWithError`.
+@MainActor
 final class SessionImporterTests: XCTestCase {
 
     var context: ModelContext!
+    /// Held, not local: `mainContext` is owned by the container, so a container
+    /// that goes out of scope at the end of `setUpWithError` takes the context
+    /// with it and every test crashes on a dangling reference. The old
+    /// `ModelContext(container)` retained it for us and hid this.
+    private var container: ModelContainer!
     private let base = Date(timeIntervalSince1970: 1_700_000_000)
     private func t(_ offset: TimeInterval) -> Date { base.addingTimeInterval(offset) }
 
     override func setUpWithError() throws {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try ModelContainer(
+        container = try ModelContainer(
             for: WorkoutTemplate.self, MurphSession.self, RunSplit.self, RoundLog.self,
             configurations: config
         )
-        context = ModelContext(container)
+        // `container.mainContext`, matching what ships. `PhoneSyncCoordinator`
+        // deliberately imports into the main context so received sessions reach
+        // the `@Query`-backed History screen without a cross-context merge; a
+        // test against a freshly constructed `ModelContext` was exercising a
+        // flavour of `apply` that no longer runs in the app — including the
+        // autosave behaviour, which differs between the two.
+        context = container.mainContext
     }
 
     private func spec(rounds: Int = 3, id: UUID = UUID()) -> TemplateSpec {

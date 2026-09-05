@@ -4,6 +4,12 @@ import Foundation
 /// The three sync channels, abstracted so the coordinators can be tested
 /// against a fake. `WatchConnectivity` itself is verified by hand — it cannot
 /// be meaningfully unit tested.
+///
+/// Deliberately send-only. It carried `onLiveEvent`, `onCheckpoint` and
+/// `onContext` receive hooks that nothing in the app ever assigned — each side
+/// receives through its own `WCSessionDelegate` instead — so they were three
+/// pieces of API a reader had to trace to nowhere, and one of them was being
+/// *called* from a closure that could never be set.
 protocol SessionTransport: AnyObject {
     var isReachable: Bool { get }
 
@@ -15,8 +21,4 @@ protocol SessionTransport: AnyObject {
 
     /// Latest-value-wins reference data.
     func updateContext(_ context: SyncContext)
-
-    var onLiveEvent: ((UUID, SessionEvent) -> Void)? { get set }
-    var onCheckpoint: ((SyncPayload) -> Void)? { get set }
-    var onContext: ((SyncContext) -> Void)? { get set }
 }

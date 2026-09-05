@@ -61,6 +61,48 @@ final class SessionJournalTests: XCTestCase {
         XCTAssertEqual(found.sessionID, journal.sessionID)
     }
 
+    /// Two unfinished journals is not a hypothetical: a journal only becomes
+    /// terminal when the user finishes or abandons it, and the launch prompt is
+    /// the only way to abandon one — so dismissing the prompt and starting a
+    /// fresh workout leaves both on disk. `contentsOfDirectory` returns them in
+    /// no defined order, so without this the prompt could offer last week's.
+    func test_resumableOffersTheMostRecentlyStartedOfSeveral() throws {
+        let older = try SessionJournal(sessionID: UUID(), directory: directory)
+        try older.append(
+            .started(at: t(0), template: spec, vestOn: false, vestWeightLbs: nil, indoor: false)
+        )
+        try older.append(.roundCompleted(number: 1, at: t(60)))
+
+        let newer = try SessionJournal(sessionID: UUID(), directory: directory)
+        try newer.append(
+            .started(at: t(86_400), template: spec, vestOn: false, vestWeightLbs: nil, indoor: false)
+        )
+
+        XCTAssertEqual(
+            try SessionJournal.resumable(in: directory)?.sessionID, newer.sessionID
+        )
+    }
+
+    /// The same, with the *older* journal started second in wall-clock terms —
+    /// pinning that the choice is made on the journal's own start time and not
+    /// on whatever order the file system happened to return.
+    func test_resumableIgnoresATerminalJournalEvenWhenItIsTheNewest() throws {
+        let unfinished = try SessionJournal(sessionID: UUID(), directory: directory)
+        try unfinished.append(
+            .started(at: t(0), template: spec, vestOn: false, vestWeightLbs: nil, indoor: false)
+        )
+
+        let finishedLater = try SessionJournal(sessionID: UUID(), directory: directory)
+        try finishedLater.append(
+            .started(at: t(86_400), template: spec, vestOn: false, vestWeightLbs: nil, indoor: false)
+        )
+        try finishedLater.append(.abandoned(at: t(86_500)))
+
+        XCTAssertEqual(
+            try SessionJournal.resumable(in: directory)?.sessionID, unfinished.sessionID
+        )
+    }
+
     func test_resumableIgnoresACompletedSession() throws {
         let journal = try SessionJournal(sessionID: UUID(), directory: directory)
         try journal.append(startedEvent)
