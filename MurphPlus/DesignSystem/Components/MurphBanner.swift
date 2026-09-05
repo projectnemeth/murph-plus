@@ -18,6 +18,13 @@ enum MurphBannerTone {
 struct MurphBanner: View {
     var tone: MurphBannerTone = .info
     let text: String
+    /// A trailing chevron, for a banner that is really a control.
+    ///
+    /// The live-mirror banner was already inside a `NavigationLink` and read as
+    /// flat text — it said "Tap to follow along" and testers did not tap it.
+    /// The words were never the problem; nothing about the shape said it could
+    /// be pressed.
+    var navigates: Bool = false
 
     var body: some View {
         HStack(alignment: .top, spacing: MurphSpacing.space3) {
@@ -25,6 +32,12 @@ struct MurphBanner: View {
             Text(text)
                 .murphType(.bodySm)
                 .foregroundStyle(MurphColor.textSecondary)
+            if navigates {
+                Spacer(minLength: MurphSpacing.space2)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(MurphColor.textMuted)
+            }
         }
         .padding(.vertical, MurphSpacing.space2)
         .padding(.trailing, MurphSpacing.space3)

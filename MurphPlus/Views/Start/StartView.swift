@@ -9,6 +9,7 @@ struct StartView: View {
     @State private var vestWeightText = ""
     @State private var showTemplateEditor = false
     @State private var showDeleteTemplateConfirm = false
+    @State private var showMirror = false
 
     let onBegin: (WorkoutTemplate, Bool, Int?) -> Void
 
@@ -36,14 +37,25 @@ struct StartView: View {
                                     // this design refuses to resolve, so the guard is
                                     // to make it unreachable rather than to merge it
                                     // afterwards.
-                                    NavigationLink {
-                                        MirroredSessionView(mirror: sync.mirror)
+                                    //
+                                    // A button into `navigationDestination`, not
+                                    // a `NavigationLink`. A link's label
+                                    // disappears the moment the Watch's session
+                                    // ends, which pops the mirror out from under
+                                    // a user still reading it — the completion
+                                    // state `MirroredSessionView` now draws
+                                    // would never be seen. Ending the
+                                    // presentation is the user's to do.
+                                    Button {
+                                        showMirror = true
                                     } label: {
                                         MurphBanner(
                                             tone: .info,
-                                            text: "Session running on Apple Watch · Tap to follow along"
+                                            text: "Session running on Apple Watch · Tap to follow along",
+                                            navigates: true
                                         )
                                     }
+                                    .buttonStyle(.plain)
                                 } else {
                                     MurphButton(
                                         variant: .primary,
@@ -73,6 +85,9 @@ struct StartView: View {
                 }
                 .sheet(isPresented: $showTemplateEditor) {
                     TemplateEditorView()
+                }
+                .navigationDestination(isPresented: $showMirror) {
+                    MirroredSessionView(mirror: sync.mirror)
                 }
 
                 if showDeleteTemplateConfirm, let template = selectedTemplate {
