@@ -54,12 +54,44 @@ final class WatchSyncCoordinator: NSObject, SessionTransport {
     /// contract is to activate and wait; the documented behaviour is an
     /// exception, and the benign reading still silently loses the session's
     /// *first* checkpoint.
+    ///
+    /// **Every exit from this method now says so.** It had three silent ones,
+    /// and that `activationState` guard was the prime suspect for a finished
+    /// workout that never reached the phone across a reboot: if the Watch's
+    /// session was not activated during the phone-off window, every checkpoint
+    /// was dropped without a word. A guard that discards the session's most
+    /// important checkpoint in silence is the same failure class the rest of
+    /// this file exists to abolish — reintroduced, by a fix for something else,
+    /// and invisible until a hardware test went looking.
     func transferCheckpoint(_ payload: SyncPayload) {
-        guard
-            WCSession.isSupported(),
-            WCSession.default.activationState == .activated,
-            let data = try? JSONEncoder().encode(payload)
-        else { return }
+        let sessionID = payload.sessionID
+        let seq = payload.checkpointSeq
+
+        guard WCSession.isSupported() else {
+            SyncLog.checkpointDropped(
+                sessionID: sessionID, seq: seq, reason: "WCSession is not supported"
+            )
+            return
+        }
+
+        let state = WCSession.default.activationState
+        guard state == .activated else {
+            SyncLog.checkpointDropped(
+                sessionID: sessionID, seq: seq,
+                reason: "WCSession is \(Self.name(of: state)), not activated"
+            )
+            return
+        }
+
+        guard let data = try? JSONEncoder().encode(payload) else {
+            SyncLog.checkpointDropped(
+                sessionID: sessionID, seq: seq,
+                reason: "payload could not be encoded (\(payload.events.count) events)"
+            )
+            return
+        }
+
+        let reachable = WCSession.default.isReachable
 
         guard data.count < SyncPayload.userInfoByteLimit else {
             // Same guarantee, no ceiling. The oversize case is the *final*
@@ -70,13 +102,36 @@ final class WatchSyncCoordinator: NSObject, SessionTransport {
             do {
                 try data.write(to: url)
             } catch {
-                NSLog("MurphPlus sync: checkpoint could not be staged for file transfer — \(error.localizedDescription)")
+                SyncLog.checkpointDropped(
+                    sessionID: sessionID, seq: seq,
+                    reason: "could not be staged for file transfer — \(error.localizedDescription)"
+                )
                 return
             }
             WCSession.default.transferFile(url, metadata: nil)
+            SyncLog.checkpointSent(
+                sessionID: sessionID, seq: seq, bytes: data.count,
+                carrier: .file, reachable: reachable
+            )
             return
         }
+
         WCSession.default.transferUserInfo([SyncKey.payload: data])
+        SyncLog.checkpointSent(
+            sessionID: sessionID, seq: seq, bytes: data.count,
+            carrier: .userInfo, reachable: reachable
+        )
+    }
+
+    /// `WCSessionActivationState` has no useful description, and the raw value
+    /// alone sends the reader to the headers mid-diagnosis.
+    private static func name(of state: WCSessionActivationState) -> String {
+        switch state {
+        case .notActivated: "not activated"
+        case .inactive: "inactive"
+        case .activated: "activated"
+        @unknown default: "unknown (\(state.rawValue))"
+        }
     }
 
     /// Watch → phone context is never sent; the reference data flows the other
@@ -115,11 +170,19 @@ extension WatchSyncCoordinator: WCSessionDelegate {
     /// Was silent before: an oversize or rejected transfer simply vanished,
     /// and the payload most likely to be oversize is the one that completes
     /// the session.
+    ///
+    /// Success is logged too, and it is not redundant with `checkpointSent`:
+    /// that one records the hand-off to the queue, this one records the queue
+    /// actually draining. A workout whose checkpoints are all "sent" and none
+    /// "delivered" is a different bug from one where nothing was sent at all.
     nonisolated func session(
         _ session: WCSession, didFinish userInfoTransfer: WCSessionUserInfoTransfer, error: Error?
     ) {
-        guard let error else { return }
-        NSLog("MurphPlus sync: userInfo transfer failed — \(error.localizedDescription)")
+        if let error {
+            SyncLog.failure("userInfo transfer failed — \(error.localizedDescription)")
+        } else {
+            SyncLog.note("userInfo transfer delivered")
+        }
     }
 
     /// WatchConnectivity takes its own copy of the file when the transfer is
@@ -130,7 +193,9 @@ extension WatchSyncCoordinator: WCSessionDelegate {
         _ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?
     ) {
         if let error {
-            NSLog("MurphPlus sync: file transfer failed — \(error.localizedDescription)")
+            SyncLog.failure("file transfer failed — \(error.localizedDescription)")
+        } else {
+            SyncLog.note("file transfer delivered")
         }
         try? FileManager.default.removeItem(at: fileTransfer.file.fileURL)
     }

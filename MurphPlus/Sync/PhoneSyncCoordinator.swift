@@ -54,13 +54,18 @@ final class PhoneSyncCoordinator: NSObject {
     }
 
     /// The durable path, and the only one that may create a `MurphSession`.
+    ///
+    /// Every outcome is logged, not just the failures. The Watch says what it
+    /// sent; this says what arrived and what became of it, and the pair is what
+    /// makes "never sent" distinguishable from "sent but never delivered" —
+    /// the question a lost workout could not previously be asked.
     private func ingest(_ data: Data) {
         // Both failure paths below are logged rather than swallowed. A decode
         // failure is realistic — the user updates the Watch app but not the
         // phone app and `SessionEvent` gains a case — and it drops every
         // checkpoint of every session with no signal at all.
         guard let payload = try? JSONDecoder().decode(SyncPayload.self, from: data) else {
-            NSLog("MurphPlus sync: checkpoint could not be decoded — dropped")
+            SyncLog.failure("checkpoint could not be decoded (\(data.count)B) — dropped")
             return
         }
 
@@ -72,13 +77,33 @@ final class PhoneSyncCoordinator: NSObject {
         do {
             landed = try SessionImporter.apply(payload, context: container.mainContext)
         } catch {
-            NSLog("MurphPlus sync: checkpoint could not be imported — \(error.localizedDescription)")
+            SyncLog.failure(
+                "checkpoint \(payload.checkpointSeq) could not be imported — \(error.localizedDescription)"
+            )
             return
         }
 
+        let state = SessionState.replay(payload.events)
+
         // `landed` is nil only when the payload changed nothing: a stale or
         // duplicate sequence, or a journal that replays without a template.
-        guard SessionState.replay(payload.events).isTerminal, landed != nil else { return }
+        // Which of the two matters — one is normal traffic, the other means a
+        // session can never land — so the log distinguishes them.
+        guard landed != nil else {
+            SyncLog.checkpointIgnored(
+                sessionID: payload.sessionID, seq: payload.checkpointSeq,
+                reason: state.template == nil || state.startedAt == nil
+                    ? "journal replays without a template or a start time"
+                    : "sequence is not newer than the one already stored"
+            )
+            return
+        }
+
+        SyncLog.checkpointApplied(
+            sessionID: payload.sessionID, seq: payload.checkpointSeq, terminal: state.isTerminal
+        )
+
+        guard state.isTerminal else { return }
 
         // The session has landed in history, so stop mirroring it — otherwise
         // the phone shows the finished workout twice, once live and once real.
@@ -122,7 +147,11 @@ extension PhoneSyncCoordinator: WCSessionDelegate {
 
     /// Durable handoff. This is the only path that creates a `MurphSession`.
     nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
-        guard let data = userInfo[SyncKey.payload] as? Data else { return }
+        guard let data = userInfo[SyncKey.payload] as? Data else {
+            SyncLog.failure("userInfo arrived with no payload under the expected key")
+            return
+        }
+        SyncLog.checkpointArrived(bytes: data.count, carrier: .userInfo)
         Task { @MainActor in self.ingest(data) }
     }
 
@@ -131,7 +160,11 @@ extension PhoneSyncCoordinator: WCSessionDelegate {
     /// after — so the read must happen synchronously here, before hopping to
     /// the main actor.
     nonisolated func session(_ session: WCSession, didReceive file: WCSessionFile) {
-        guard let data = try? Data(contentsOf: file.fileURL) else { return }
+        guard let data = try? Data(contentsOf: file.fileURL) else {
+            SyncLog.failure("a transferred checkpoint file could not be read before the system reclaimed it")
+            return
+        }
+        SyncLog.checkpointArrived(bytes: data.count, carrier: .file)
         Task { @MainActor in self.ingest(data) }
     }
 
