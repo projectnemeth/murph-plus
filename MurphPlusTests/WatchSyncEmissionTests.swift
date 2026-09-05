@@ -16,6 +16,14 @@ final class FakeSessionTransport: SessionTransport {
     }
     func transferCheckpoint(_ payload: SyncPayload) { checkpoints.append(payload) }
     func updateContext(_ context: SyncContext) { contexts.append(context) }
+
+    /// Forgets what was sent, for tests that need to set up a session first and
+    /// then assert only on what happened after.
+    func reset() {
+        liveEvents = []
+        checkpoints = []
+        contexts = []
+    }
 }
 
 @MainActor

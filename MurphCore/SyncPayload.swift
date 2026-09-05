@@ -58,6 +58,47 @@ struct PersonalBest: Codable, Equatable {
 struct SyncContext: Codable, Equatable {
     var templates: [TemplateSpec]
     var personalBests: [PersonalBest]
+
+    /// Sessions the phone holds **in a terminal state**.
+    ///
+    /// This is the acknowledgement half of the durable channel, and the reason
+    /// the Watch can ever delete a journal. Terminal specifically, not merely
+    /// "seen": a session the phone holds mid-way is one whose final checkpoint
+    /// never landed, and acknowledging that would let the Watch destroy the
+    /// only remaining copy of a workout the phone will show as in-progress
+    /// forever.
+    ///
+    /// Latest-value-wins like the rest of the context, so it is a full list
+    /// each time rather than a delta.
+    var acknowledgedSessionIDs: [UUID]
+
+    init(
+        templates: [TemplateSpec],
+        personalBests: [PersonalBest],
+        acknowledgedSessionIDs: [UUID] = []
+    ) {
+        self.templates = templates
+        self.personalBests = personalBests
+        self.acknowledgedSessionIDs = acknowledgedSessionIDs
+    }
+
+    /// Hand-written for one key only: `acknowledgedSessionIDs` must decode as
+    /// empty when absent rather than failing the whole context.
+    ///
+    /// A user updates one device before the other — routinely, since the Watch
+    /// app updates with the phone app but on the Watch's own schedule — so a
+    /// new Watch will meet an old phone's context. Synthesised `Codable` throws
+    /// on a missing key, and a context that fails to decode is dropped in
+    /// silence, taking the template list and personal bests with it. Empty is
+    /// also the safe value: it acknowledges nothing, so the Watch keeps every
+    /// journal.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        templates = try container.decode([TemplateSpec].self, forKey: .templates)
+        personalBests = try container.decode([PersonalBest].self, forKey: .personalBests)
+        acknowledgedSessionIDs =
+            try container.decodeIfPresent([UUID].self, forKey: .acknowledgedSessionIDs) ?? []
+    }
 }
 
 enum SessionMerge {

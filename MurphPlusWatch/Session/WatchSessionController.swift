@@ -388,6 +388,92 @@ final class WatchSessionController {
         }
     }
 
+    /// How many stuck journals one pass will resend.
+    ///
+    /// Each is a whole journal — 60–75KB, so the file-transfer path — and a
+    /// phone that has been off for a week could leave several. Bounded so a
+    /// launch cannot turn into a megabyte of transfers, and low enough that
+    /// the realistic case (a handful of workouts done while the phone was
+    /// away) still clears in one go.
+    static let resendBatchLimit = 5
+
+    /// Resends finished workouts the phone never acknowledged, and deletes the
+    /// journals of the ones it did.
+    ///
+    /// Two roadmap items turned out to be one feature. A completed workout was
+    /// lost across a phone reboot (§1) — it still existed on the Watch, having
+    /// simply never been delivered — and Watch journals accumulated forever
+    /// (§7) because nothing could ever say when one was safe to remove. An
+    /// acknowledgement answers both: what the phone has not confirmed is
+    /// resent, and what it has confirmed is deleted.
+    ///
+    /// This is what makes the durable channel actually durable. `transferUserInfo`
+    /// guarantees delivery *of a queued transfer*, which is not the same as
+    /// guaranteeing the session arrives — anything that stops the checkpoint
+    /// from being queued in the first place (an unactivated session, a failed
+    /// encode, a kill between the append and the transfer) leaves no trace and
+    /// no retry. Now the journal on disk is the retry.
+    ///
+    /// - Parameter acknowledged: session ids the phone holds in a terminal
+    ///   state, from `SyncContext`. An empty set is the safe reading — resend
+    ///   what can be resent, delete nothing.
+    func reconcileJournals(acknowledged: Set<UUID>) {
+        guard let journals = try? SessionJournal.all(in: journalDirectory) else { return }
+
+        var pending: [SessionJournal] = []
+
+        for journal in journals {
+            // Never the session this controller is running: its journal is
+            // still being appended to, and it checkpoints as it goes.
+            guard journal.sessionID != self.journal?.sessionID else { continue }
+
+            if acknowledged.contains(journal.sessionID) {
+                do {
+                    try journal.delete()
+                    SyncLog.note("deleted journal \(journal.sessionID) — the phone has it")
+                } catch {
+                    SyncLog.failure(
+                        "journal \(journal.sessionID) could not be deleted — \(error.localizedDescription)"
+                    )
+                }
+                continue
+            }
+
+            // An unfinished journal is the resume prompt's business, not this
+            // one's. Resending it would be sending a session the user has not
+            // decided the fate of yet, and deleting it would discard a workout
+            // they may be about to continue.
+            guard journal.state.isTerminal else { continue }
+            pending.append(journal)
+        }
+
+        guard let transport, !pending.isEmpty else { return }
+
+        // Oldest first: the longest-stuck workout is the one most likely to be
+        // lost to something else before the next pass.
+        let batch = pending
+            .sorted { ($0.state.startedAt ?? .distantPast) < ($1.state.startedAt ?? .distantPast) }
+            .prefix(Self.resendBatchLimit)
+
+        SyncLog.note(
+            "resending \(batch.count) of \(pending.count) unacknowledged journal(s)"
+        )
+
+        for journal in batch {
+            // The sequence the terminal checkpoint carried when it was first
+            // sent — derived, not remembered, so it is correct across a
+            // relaunch. It outranks every earlier checkpoint of this session,
+            // which is what `SessionMerge` needs to accept a phone-side session
+            // that is stuck part-way through.
+            transport.transferCheckpoint(SyncPayload(
+                sessionID: journal.sessionID,
+                checkpointSeq: Self.checkpointSequence(for: journal),
+                origin: .watch,
+                events: journal.events
+            ))
+        }
+    }
+
     /// The checkpoint sequence number a fresh journal replay reproduces.
     ///
     /// Every non-heart-rate event still in the journal produced exactly one

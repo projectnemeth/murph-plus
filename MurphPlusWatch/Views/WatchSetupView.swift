@@ -32,6 +32,10 @@ struct WatchSetupView: View {
         return selected
     }
 
+    private var acknowledgedSessionIDs: Set<UUID> {
+        Set(sync.context?.acknowledgedSessionIDs ?? [])
+    }
+
     @State private var selected: TemplateSpec?
     @AppStorage("watchVestOn") private var vestOn = false
     @AppStorage("watchVestWeight") private var vestWeight = 20
@@ -124,6 +128,19 @@ struct WatchSetupView: View {
             // otherwise drops the user into the same phantom workout on every
             // launch with no way out.
             showResumePrompt = controller.hasResumableSession()
+
+            // After the resume prompt is decided, not before: `reconcileJournals`
+            // skips unfinished journals precisely because that decision is the
+            // prompt's, and reading `hasResumableSession` first keeps the two
+            // in a defined order rather than a racing one.
+            controller.reconcileJournals(acknowledged: acknowledgedSessionIDs)
+        }
+        // The phone's acknowledgement list arrives asynchronously, and usually
+        // *after* launch — a phone that was off during the workout sends it
+        // when it comes back. Reconciling only on appear would leave the
+        // stranded workout waiting for the next launch.
+        .onChange(of: acknowledgedSessionIDs) { _, acknowledged in
+            controller.reconcileJournals(acknowledged: acknowledged)
         }
     }
 

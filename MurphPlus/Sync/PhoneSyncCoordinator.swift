@@ -47,10 +47,32 @@ final class PhoneSyncCoordinator: NSObject {
 
         let payload = SyncContext(
             templates: templates.map(\.spec),
-            personalBests: Array(bests.values)
+            personalBests: Array(bests.values),
+            acknowledgedSessionIDs: Self.acknowledgements(from: sessions)
         )
         guard let data = try? JSONEncoder().encode(payload) else { return }
         try? WCSession.default.updateApplicationContext([SyncKey.context: data])
+    }
+
+    /// The sessions the Watch may stop holding a journal for.
+    ///
+    /// Terminal ones only. A session the phone holds mid-way is one whose final
+    /// checkpoint never landed, and acknowledging it would invite the Watch to
+    /// delete the only remaining copy of a workout that will otherwise sit
+    /// `.inProgress` forever.
+    ///
+    /// Watch-origin only, since those are the only journals that exist, and
+    /// capped at the most recent 100 so the application context cannot grow
+    /// without bound across years of workouts. The cap is safe: for a journal
+    /// to fall outside the window it would have to have gone unacknowledged
+    /// across a hundred later Watch workouts, and resending something in that
+    /// state is the right answer rather than a bug.
+    static func acknowledgements(from sessions: [MurphSession]) -> [UUID] {
+        sessions
+            .filter { $0.origin == .watch && $0.status != .inProgress }
+            .sorted { $0.date > $1.date }
+            .prefix(100)
+            .map(\.id)
     }
 
     /// The durable path, and the only one that may create a `MurphSession`.

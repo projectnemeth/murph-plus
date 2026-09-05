@@ -115,4 +115,30 @@ final class SyncPayloadTests: XCTestCase {
 
         XCTAssertEqual(decoded, context)
     }
+
+    // MARK: - Acknowledgements
+
+    func test_contextRoundTripsItsAcknowledgements() throws {
+        let ids = [UUID(), UUID()]
+        let original = SyncContext(templates: [spec], personalBests: [], acknowledgedSessionIDs: ids)
+        let decoded = try JSONDecoder().decode(
+            SyncContext.self, from: JSONEncoder().encode(original)
+        )
+        XCTAssertEqual(decoded.acknowledgedSessionIDs, ids)
+    }
+
+    /// The Watch app updates on its own schedule, so a new Watch will meet an
+    /// old phone's context. Synthesised `Codable` would throw on the missing
+    /// key and the whole context — templates and personal bests included —
+    /// would be dropped in silence.
+    func test_contextFromAnOlderPhoneDecodesWithNoAcknowledgements() throws {
+        let legacy = """
+        {"templates":[],"personalBests":[]}
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(SyncContext.self, from: legacy)
+
+        XCTAssertTrue(decoded.acknowledgedSessionIDs.isEmpty)
+        XCTAssertTrue(decoded.templates.isEmpty)
+    }
 }
