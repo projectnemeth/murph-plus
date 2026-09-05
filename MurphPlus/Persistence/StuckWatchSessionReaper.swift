@@ -18,7 +18,13 @@ enum StuckWatchSessionReaper {
     /// A Murph takes one to two hours. Six is generous enough that a genuinely
     /// long session is never swept, and short enough that a dead Watch surfaces
     /// the same day.
-    static let defaultThreshold: TimeInterval = 6 * 3600
+    static var defaultThreshold: TimeInterval {
+        // Overridable in DEBUG so hardware test 10 can run in a minute rather
+        // than six hours, without this file being edited and put back.
+        DebugOverride.seconds("MurphStuckSessionThreshold") ?? shippedThreshold
+    }
+
+    static let shippedThreshold: TimeInterval = 6 * 3600
 
     static func stuckSessions(
         context: ModelContext,

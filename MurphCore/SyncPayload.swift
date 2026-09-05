@@ -32,7 +32,15 @@ struct SyncPayload: Codable, Equatable {
     /// the checkpoint most likely to be the terminal one. The margin costs
     /// nothing: the file-transfer path is equally durable, so the only price of
     /// crossing over early is a temporary file.
-    static let userInfoByteLimit = 60_000
+    static var userInfoByteLimit: Int {
+        // Overridable in DEBUG so hardware tests 11 and 12 can force the
+        // file-transfer path without editing this file — the real trigger is a
+        // session past roughly 2h13m, which is not a thing to sit through, and
+        // an edited-then-forgotten constant here drops checkpoints silently.
+        DebugOverride.int("MurphUserInfoByteLimit") ?? defaultUserInfoByteLimit
+    }
+
+    static let defaultUserInfoByteLimit = 60_000
 
     /// Heart-rate events are bulky (~700 per long session), already aggregated
     /// into per-segment summaries, and their raw form lives in HealthKit. The

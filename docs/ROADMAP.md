@@ -104,19 +104,22 @@ a session is running against that template. **Test 05 is now runnable.**
 The banner has a chevron. It was always inside a navigation control; nothing
 about its shape said so.
 
-### 6. Three matrix tests never run — they need temporary constant changes
+### 6. Three matrix tests never run — now runnable without editing anything
 
-None is testable as shipped. Make the edit, run the check, revert before
-committing:
+They used to need a source edit reverted before committing, which put a
+production constant one forgotten `git checkout` away from shipping wrong — on
+values whose failure mode is a silently dropped checkpoint. Both are now
+DEBUG-only launch-argument overrides (`DebugOverride`), so set them in the
+scheme and run:
 
 Test 08 also needs re-running — not for a code change, but because its first run
 used a disconnect method that doesn't disconnect. See the method correction above.
 
-| Test | Edit | What it proves |
+| Test | Scheme argument | What it proves |
 |---|---|---|
-| 10 · Dead watch → abandon, never resume | `StuckWatchSessionReaper.defaultThreshold` → `60` | Single-writer: the phone may abandon a Watch-owned session, never continue one |
-| 11 · Oversize payload takes the file path | `SyncPayload.userInfoByteLimit` → `2_000` | The file-transfer carrier works end to end (real trigger is a session past ~2h13m) |
-| 12 · Staged files are cleaned up | keep 11's limit | Whether `fileTransfer.file.fileURL` is our staged file or a system copy — deleting the wrong one would be silent |
+| 10 · Dead watch → abandon, never resume | `-MurphStuckSessionThreshold 60` | Single-writer: the phone may abandon a Watch-owned session, never continue one |
+| 11 · Oversize payload takes the file path | `-MurphUserInfoByteLimit 2000` | The file-transfer carrier works end to end (real trigger is a session past ~2h13m) |
+| 12 · Staged files are cleaned up | keep 11's argument | Whether `fileTransfer.file.fileURL` is our staged file or a system copy — deleting the wrong one would be silent |
 
 Test 12's question is now guarded in code rather than only observed: staged
 files live in their own `tmp/checkpoint-staging/` directory and `didFinish`
