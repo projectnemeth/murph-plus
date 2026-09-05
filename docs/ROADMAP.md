@@ -34,53 +34,36 @@ The reliable sever is **Airplane Mode on the Watch**, confirmed by the
 disconnected glyph appearing on the watch face — the glyph, not the toggle, is the
 evidence.
 
-### 1. A completed workout was lost across a phone reboot — HIGH
+### 1 & 2. Addressed on branch `overnight/roadmap-sync-hardening` — RE-RUN NEEDED
 
-**Not an edge case: this is a finished workout that never reached History.**
+Both were worked on 2026-09-04 (see the branch). **Neither is confirmed fixed:
+they were fixed by reasoning and unit tests, and the evidence that mattered was
+always hardware.**
 
-Test 09: phone powered fully off, whole session completed on the Watch, phone
-powered back on and opened — the session never arrived, and Console showed
-nothing.
+**§2, sync logging, is done.** Both sides now log successes as well as failures:
+the Watch logs every `transferCheckpoint` with session, sequence, byte size,
+carrier and reachability — including all three previously silent early returns,
+the `activationState` guard among them — and the phone logs each arrival and
+what became of it. `os.Logger`, subsystem `com.projectnemeth.MurphPlus`,
+category `sync`. Filter Console on that category.
 
-What is already known:
+**§1 has a fix, not a diagnosis.** The Watch now resends any finished journal the
+phone has not acknowledged, and deletes the ones it has (see §7's retention item
+— they were one feature). That recovers a workout lost this way whatever the
+cause, but it does **not** tell you what the cause was.
 
-- **There is no evidence the durable channel queues at all when the phone is
-  unreachable.** Test 08 was the only other check of that property, and its pass
-  was withdrawn (see the method correction above) — so 08 and 09 may be a single
-  root cause rather than two problems. Re-running 08 properly is the cheapest way
-  to find out, and it needs no reboot.
-- **Prime suspect is a regression from the review-fix wave.** The
-  `activationState == .activated` guard added to
-  `WatchSyncCoordinator.transferCheckpoint` returns early **with no log**. If the
-  Watch's session was not activated during the phone-off window, every checkpoint
-  was dropped silently — the same silent-drop class that fix wave existed to
-  abolish, reintroduced by the fix for a different defect.
-- **Mitigating:** the data is not destroyed. `finishAndReset()` deliberately keeps
-  the journal on the Watch, so the workout still exists there — it was simply
-  never delivered.
+**So the tests still to run, in this order:**
 
-**Start here:** instrumentation, not a fix. See item 2 below; the diagnosis is
-blocked on it and cannot be settled by reading. Then re-run 08 (Airplane Mode on
-the Watch) before 09 — it exercises the same queuing property in two minutes
-instead of a reboot cycle, and tells you immediately whether this is one bug or
-two.
-
-**Worth designing together with the journal-retention item (§7):** a "resend any
-journal the phone has not acknowledged" pass would both recover workouts lost this
-way and give the retention problem its natural answer — a journal can be deleted
-once the phone has confirmed it.
-
-### 2. Sync logs only failures, never successes — HIGH (blocks §1)
-
-The five `MurphPlus sync` lines fire only on error. When a checkpoint simply never
-arrives, there is no way to tell "never sent" from "sent but not delivered", which
-is exactly why §1 is undiagnosable today.
-
-**Start here:** log every `transferCheckpoint` call with its carrier
-(userInfo vs file), payload size and activation state; log the silent early return
-in that guard; log every `didReceiveUserInfo` / `didReceive file:` arrival on the
-phone. Then re-run test 09. Consider keeping a reduced version permanently — this
-feature's whole failure surface is silent by construction.
+1. **Test 08, properly** — Airplane Mode on the Watch, confirmed by the
+   disconnected glyph. Two minutes, no reboot. With logging in place this now
+   answers the original question directly: whether checkpoints queue at all when
+   the phone is unreachable.
+2. **Test 09** — the phone-off reboot case. Watch the log for `DROPPED
+   checkpoint … WCSession is not activated`. If it appears, §1's prime suspect
+   was right and the guard needs rethinking rather than just compensating for.
+3. **The recovery path itself** — after 09, bring the phone back and confirm the
+   stranded workout arrives via the resend pass (`resending N of M
+   unacknowledged journal(s)` in the log).
 
 ### 3. The phone offers Begin while the Watch owns a live session — MEDIUM
 
@@ -98,27 +81,28 @@ Stage 2's pause behaviour; neither is wrong alone.
 A second path to the same place: the mirror is in-memory only, so force-quitting
 the phone app wipes it, and Begin is offered until the next live event lands.
 
-**This needs a design conversation, not a patch.** There is a real tension: the
-staleness expiry exists so a dead Watch cannot hide Begin forever, and making the
-mirror survive a pause pulls directly against it. The promising signal is that the
-phone already persists the Watch session's journal (`journalData`), so it can tell
-"paused, therefore legitimately quiet" from "gone" — which the live channel alone
-cannot.
+**This needs a design conversation, not a patch**, and one is now written up
+rather than guessed at:
+`docs/superpowers/specs/2026-09-04-mirror-staleness-vs-pause-design.md`. Four
+options with their costs, a recommendation (decide Begin from the durable
+record rather than the live mirror, since it is the only one that closes both
+failure paths), and three questions that need an answer before any code moves.
+**Still open — deliberately.**
 
 Note for whoever picks this up: test 07's actual assertion **passed** — one record
 per session with the full round count, so the checkpoint-sequence fix holds on real
 hardware. What was recorded as its failure is this same mirror problem.
 
-### 4. No way to delete a template on the phone — MEDIUM (missing feature)
+### 4. No way to delete a template on the phone — DONE (2026-09-04)
 
-Made test 05 unrunnable. Sessions can be deleted from `SessionDetailView`;
-templates have no delete affordance anywhere. Small feature, and it unblocks a test
-that covers `resolveTemplate`'s rebuild-from-snapshot path.
+Delete lives on the Start tab, under the selected template's card. Past sessions
+are kept and the confirmation says how many are affected; refused outright while
+a session is running against that template. **Test 05 is now runnable.**
 
-### 5. Mirror discoverability — LOW
+### 5. Mirror discoverability — DONE (2026-09-04)
 
-The only way into the live mirror is a banner reading "Session running on Apple
-Watch · Tap to follow along", and it did not read as tappable during testing.
+The banner has a chevron. It was always inside a navigation control; nothing
+about its shape said so.
 
 ### 6. Three matrix tests never run — they need temporary constant changes
 
@@ -134,27 +118,45 @@ used a disconnect method that doesn't disconnect. See the method correction abov
 | 11 · Oversize payload takes the file path | `SyncPayload.userInfoByteLimit` → `2_000` | The file-transfer carrier works end to end (real trigger is a session past ~2h13m) |
 | 12 · Staged files are cleaned up | keep 11's limit | Whether `fileTransfer.file.fileURL` is our staged file or a system copy — deleting the wrong one would be silent |
 
-### 7. Parked during code review, with reasoning
+Test 12's question is now guarded in code rather than only observed: staged
+files live in their own `tmp/checkpoint-staging/` directory and `didFinish`
+refuses to delete a URL outside it, so a system-owned copy cannot be removed by
+mistake. The test is still worth running — it also proves the sweep leaves an
+outstanding transfer's file alone — but it is no longer the only thing standing
+between us and a silent deletion.
+
+### 7. Parked during code review — mostly cleared (2026-09-04)
 
 Carried from the Stage 3 reviews. Full reasoning in
-`docs/superpowers/handoffs/2026-09-04-watch-stage-3-handoff.md`.
+`docs/superpowers/handoffs/2026-09-04-watch-stage-3-handoff.md`. Cleared on
+branch `overnight/roadmap-sync-hardening` unless marked otherwise.
 
-- **Watch journals accumulate forever**, and every launch decodes all of them on
-  the main actor (`SessionJournal.all` fully decodes each file; `WatchSetupView`
-  calls it on appear). ~60–75 KB each. Degrades over months. **See §1 — this and
-  the resend pass are one feature.**
-- The resume test does not actually pin `checkpointSequence`'s `!isHeartRate`
-  filter; its assertion passes with or without it. One-line remedy:
-  `XCTAssertEqual(afterResume, beforeCrash + 1)`.
-- `SessionImporterTests` builds `ModelContext(container)` while `ingest` now ships
-  against `container.mainContext`, so `apply` is not exercised against the flavour
-  that ships.
-- The six-hour stuck-session threshold has no boundary test. Deliberate: direction
-  is pinned by tests either side, and exact equality on a wall-clock heuristic is a
+**Done:**
+
+- **Journals no longer accumulate forever.** A journal is deleted once the phone
+  acknowledges holding that session in a terminal state; unacknowledged finished
+  ones are resent. Same feature as §1, as predicted. The main-actor decode cost
+  of `SessionJournal.all` on launch is bounded by the same change — the pile no
+  longer grows — but is otherwise untouched.
+- The resume test now asserts `beforeCrash + 1`, which is what actually pins
+  `checkpointSequence`'s `!isHeartRate` filter.
+- `SessionImporterTests` runs against `container.mainContext`, matching what
+  ships. Doing so exposed a second defect in the fixture: `mainContext` is owned
+  by the container, and the container was a local, so every test crashed on a
+  dangling context until it was held.
+- The mirror now has a completion state with its own Done button, and the parent
+  presents it in a way that does not pop it away mid-glance.
+- `SessionTransport`'s three unassigned receive hooks are gone. One of them was
+  being *called*, from a closure that could never be set.
+- `SessionJournal.resumable()` picks the most recently started of several, on the
+  journal's own `startedAt` rather than file mtime.
+- Staged checkpoint files live in `tmp/checkpoint-staging/` and are swept after
+  activation, skipping anything still in `outstandingFileTransfers`. The
+  dedicated directory also lets `didFinish` check the URL it was handed is ours
+  before deleting it — which is the open question test 12 exists to answer.
+
+**Still open, deliberately:**
+
+- The six-hour stuck-session threshold has no boundary test. Direction is pinned
+  by tests either side, and exact equality on a wall-clock heuristic is a
   judgement call, not a contract.
-- The mirror pops the user out with no completion feedback when the session ends.
-- `SessionTransport` declares three closures (`onLiveEvent`, `onCheckpoint`,
-  `onContext`) that nothing in production assigns.
-- `SessionJournal.resumable()` does not sort by mtime, so with two non-terminal
-  journals the launch prompt could offer the wrong one.
-- A staged `checkpoint-*.json` leaks if the Watch app is killed mid-transfer.
