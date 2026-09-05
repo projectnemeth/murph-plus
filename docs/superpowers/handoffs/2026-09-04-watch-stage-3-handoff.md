@@ -180,7 +180,10 @@ Each is deliberate and commit messages carry the full reasoning:
 **Task 7 — end-to-end verification on real hardware. Not run, and not runnable
 here:** it needs a physically paired iPhone and Apple Watch and physical acts
 (power the phone off, walk out of Bluetooth range, let the watch battery die).
-Its brief in `.superpowers/sdd/.../task-7-brief.md` has all eight steps.
+Its eight steps are Task 7 of `docs/superpowers/plans/
+2026-09-03-murph-plus-watch-stage-3-sync.md`. (The SDD brief that used to hold them
+lived in the worktree's gitignored workspace and went with the worktree; the tracked
+plan is the surviving source.)
 
 One of its assertions was checkable as logic and **was** a real bug, now fixed:
 Step 5 requires the phone to offer *abandon but not resume* for a watch-owned
@@ -254,8 +257,14 @@ serialized dictionary rather than the `Data` inside it — now 60,000.
 ## Still open
 
 **Stage 3 Task 7, the hardware matrix, is still NOT run** and still needs a physically
-paired iPhone and Apple Watch. Its brief is in the sibling workspace
-`.superpowers/sdd/2026-09-03-murph-plus-watch-stage-3-sync/task-7-brief.md`. Four things
+paired iPhone and Apple Watch. Its eight steps are Task 7 of
+`docs/superpowers/plans/2026-09-03-murph-plus-watch-stage-3-sync.md` — the SDD brief
+went with the worktree at cleanup, so the tracked plan is the surviving source. Note
+that Task 7 predates these fixes and two of its steps now expect the wrong thing:
+Step 5's abandon affordance sits behind `StuckWatchSessionReaper`'s six-hour
+threshold, so it shows nothing on a same-day test unless that constant is lowered
+temporarily; and Step 4 should additionally run TWO sessions in one launch of the
+watch app before force-quitting, which is the shape of the Critical below. Four things
 the final review could only defer to it:
 
 1. That an imported watch session really does appear in History without a relaunch.
