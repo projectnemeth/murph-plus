@@ -8,69 +8,117 @@ struct StartView: View {
     @State private var vestOn = false
     @State private var vestWeightText = ""
     @State private var showTemplateEditor = false
+    @State private var showDeleteTemplateConfirm = false
 
     let onBegin: (WorkoutTemplate, Bool, Int?) -> Void
 
     @Environment(PhoneSyncCoordinator.self) private var sync
+    @Environment(\.modelContext) private var context
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    MurphScreenTitle(title: "Murph+")
+            ZStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        MurphScreenTitle(title: "Murph+")
 
-                    VStack(alignment: .leading, spacing: MurphSpacing.gapSection) {
-                        workoutSection
-                        vestSection
+                        VStack(alignment: .leading, spacing: MurphSpacing.gapSection) {
+                            workoutSection
+                            vestSection
 
-                        // `isStale` is time-derived, so `@Observable` alone
-                        // will not re-render when it flips; the timer forces
-                        // a re-evaluation once a second.
-                        TimelineView(.periodic(from: .now, by: 1)) { _ in
-                            if sync.mirror.isMirroring {
-                                // Never offer Start while the Watch owns a
-                                // session. Two live sessions is the one conflict
-                                // this design refuses to resolve, so the guard is
-                                // to make it unreachable rather than to merge it
-                                // afterwards.
-                                NavigationLink {
-                                    MirroredSessionView(mirror: sync.mirror)
-                                } label: {
-                                    MurphBanner(
-                                        tone: .info,
-                                        text: "Session running on Apple Watch · Tap to follow along"
-                                    )
+                            // `isStale` is time-derived, so `@Observable` alone
+                            // will not re-render when it flips; the timer forces
+                            // a re-evaluation once a second.
+                            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                                if sync.mirror.isMirroring {
+                                    // Never offer Start while the Watch owns a
+                                    // session. Two live sessions is the one conflict
+                                    // this design refuses to resolve, so the guard is
+                                    // to make it unreachable rather than to merge it
+                                    // afterwards.
+                                    NavigationLink {
+                                        MirroredSessionView(mirror: sync.mirror)
+                                    } label: {
+                                        MurphBanner(
+                                            tone: .info,
+                                            text: "Session running on Apple Watch · Tap to follow along"
+                                        )
+                                    }
+                                } else {
+                                    MurphButton(
+                                        variant: .primary,
+                                        size: .lg,
+                                        full: true,
+                                        icon: Image(systemName: "play.fill"),
+                                        title: "Begin"
+                                    ) {
+                                        guard let selectedTemplate else { return }
+                                        let weight = vestOn ? Int(vestWeightText) : nil
+                                        onBegin(selectedTemplate, vestOn, weight)
+                                    }
+                                    .disabled(selectedTemplate == nil)
                                 }
-                            } else {
-                                MurphButton(
-                                    variant: .primary,
-                                    size: .lg,
-                                    full: true,
-                                    icon: Image(systemName: "play.fill"),
-                                    title: "Begin"
-                                ) {
-                                    guard let selectedTemplate else { return }
-                                    let weight = vestOn ? Int(vestWeightText) : nil
-                                    onBegin(selectedTemplate, vestOn, weight)
-                                }
-                                .disabled(selectedTemplate == nil)
                             }
                         }
+                        .padding(.horizontal, MurphSpacing.gutterScreen)
+                        .padding(.bottom, MurphSpacing.space8)
                     }
-                    .padding(.horizontal, MurphSpacing.gutterScreen)
-                    .padding(.bottom, MurphSpacing.space8)
+                }
+                .murphScreenBackground()
+                .toolbar(.hidden, for: .navigationBar)
+                .onAppear {
+                    if selectedTemplate == nil {
+                        selectedTemplate = templates.first
+                    }
+                }
+                .sheet(isPresented: $showTemplateEditor) {
+                    TemplateEditorView()
+                }
+
+                if showDeleteTemplateConfirm, let template = selectedTemplate {
+                    deleteDialog(for: template)
                 }
             }
-            .murphScreenBackground()
-            .toolbar(.hidden, for: .navigationBar)
-            .onAppear {
-                if selectedTemplate == nil {
-                    selectedTemplate = templates.first
-                }
+        }
+    }
+
+    /// Says what survives, not just what goes. Sessions outlive their template
+    /// by design (`.nullify`, so a tidy-up cannot erase logged times), but they
+    /// lose its name — and a user who finds that out afterwards has no way back.
+    private func deleteDialog(for template: WorkoutTemplate) -> some View {
+        let affected = TemplateDeletion.affectedSessionCount(for: template)
+        return MurphDialog(
+            title: "Delete \u{201c}\(template.name)\u{201d}?",
+            body: affected == 0
+                ? "No sessions have used this template. This can\u{2019}t be undone."
+                : "\(affected) session\(affected == 1 ? "" : "s") used this template. "
+                    + "They\u{2019}re kept, but will lose its name. This can\u{2019}t be undone.",
+            onDismiss: { showDeleteTemplateConfirm = false }
+        ) {
+            MurphButton(variant: .danger, full: true, title: "Delete") {
+                showDeleteTemplateConfirm = false
+                deleteSelectedTemplate(template)
             }
-            .sheet(isPresented: $showTemplateEditor) {
-                TemplateEditorView()
+            MurphButton(variant: .secondary, full: true, title: "Cancel") {
+                showDeleteTemplateConfirm = false
             }
+        }
+    }
+
+    private func deleteSelectedTemplate(_ template: WorkoutTemplate) {
+        // Move the selection off the template *before* deleting it: this view
+        // holds it in `@State` and reads `template.name` while rendering, so
+        // deleting first can leave a body evaluation on a deleted model.
+        selectedTemplate = templates.first { $0 != template }
+        do {
+            try TemplateDeletion.delete(template, context: context)
+            // The Watch's template list is this list. Without the push it keeps
+            // offering a template the phone no longer has.
+            sync.pushContext()
+        } catch {
+            // Put the selection back — the template is still there.
+            selectedTemplate = template
+            assertionFailure("Failed to delete template: \(error)")
         }
     }
 
@@ -82,17 +130,27 @@ struct StartView: View {
                 }
             }
 
-            MurphSelectField(
-                placeholder: "Choose a template",
-                options: templates.indices.map { MurphSelectOption(id: String($0), label: templates[$0].name) },
-                selection: Binding(
-                    get: { selectedTemplate.flatMap { templates.firstIndex(of: $0) }.map(String.init) },
-                    set: { idString in
-                        guard let idString, let index = Int(idString), templates.indices.contains(index) else { return }
-                        selectedTemplate = templates[index]
-                    }
+            if templates.isEmpty {
+                // Reachable now that templates can be deleted. Without this the
+                // screen is a placeholder select field above a disabled Begin,
+                // with nothing saying what to do about it.
+                MurphEmptyState(
+                    title: "No templates",
+                    body: "Create one to start a workout. Tap New template above."
                 )
-            )
+            } else {
+                MurphSelectField(
+                    placeholder: "Choose a template",
+                    options: templates.indices.map { MurphSelectOption(id: String($0), label: templates[$0].name) },
+                    selection: Binding(
+                        get: { selectedTemplate.flatMap { templates.firstIndex(of: $0) }.map(String.init) },
+                        set: { idString in
+                            guard let idString, let index = Int(idString), templates.indices.contains(index) else { return }
+                            selectedTemplate = templates[index]
+                        }
+                    )
+                )
+            }
 
             if let template = selectedTemplate {
                 MurphCard {
@@ -124,7 +182,29 @@ struct StartView: View {
                         }
                     }
                 }
+
+                if let blocker = TemplateDeletion.blocker(for: template) {
+                    // Named rather than merely disabled: a greyed-out delete
+                    // with no explanation reads as a bug, not a rule.
+                    MurphBanner(tone: .info, text: message(for: blocker))
+                } else {
+                    MurphButton(
+                        variant: .danger,
+                        size: .sm,
+                        icon: Image(systemName: "trash"),
+                        title: "Delete template"
+                    ) {
+                        showDeleteTemplateConfirm = true
+                    }
+                }
             }
+        }
+    }
+
+    private func message(for blocker: TemplateDeletion.Failure) -> String {
+        switch blocker {
+        case .sessionInProgress:
+            "A session is running against this template. Finish or abandon it before deleting."
         }
     }
 
