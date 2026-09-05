@@ -28,7 +28,15 @@ struct HistoryView: View {
     }
 
     private var summary: HistoryStats.Summary {
-        HistoryStats.summarize(completedSessions: sessions.filter { $0.status == .completed })
+        HistoryStats.summarize(sessions: sessions)
+    }
+
+    /// The sessions holding a record, one per template-and-vest. Computed once
+    /// per render rather than per row: the old per-row test compared each time
+    /// against a single global best, which is what let a mini-Murph's time
+    /// badge a full one.
+    private var personalBestIDs: Set<UUID> {
+        HistoryStats.personalBestIDs(sessions: sessions)
     }
 
     var body: some View {
@@ -80,10 +88,21 @@ struct HistoryView: View {
     // MARK: - List
 
     private var listContent: some View {
-        VStack(alignment: .leading, spacing: MurphSpacing.gapSection) {
+        // Hoisted out of the row: read inside `ForEach` it would rebuild the
+        // whole set once per session.
+        let bests = personalBestIDs
+        return VStack(alignment: .leading, spacing: MurphSpacing.gapSection) {
             MurphCard {
                 HStack(alignment: .top, spacing: MurphSpacing.space4) {
-                    MurphStatTile(label: "Personal best", value: summary.personalBestSeconds.map(formatDuration) ?? "\u{2014}")
+                    MurphStatTile(
+                        label: "Personal best",
+                        value: summary.personalBestSeconds.map(formatDuration) ?? "\u{2014}",
+                        // Names the workout the three numbers describe. They
+                        // are scoped to one template and vest state, and an
+                        // unlabelled record invites exactly the reading that
+                        // was wrong before: that it spans the whole history.
+                        caption: summary.scopeLabel
+                    )
                     MurphStatTile(
                         label: "Most recent",
                         value: summary.mostRecentSeconds.map(formatDuration) ?? "\u{2014}",
@@ -91,7 +110,7 @@ struct HistoryView: View {
                             "\(trend <= 0 ? "\u{2193}" : "\u{2191}")\(formatDuration(abs(trend))) vs last"
                         }
                     )
-                    MurphStatTile(label: "Attempts", value: "\(sessions.count)", alignTrailing: true)
+                    MurphStatTile(label: "Attempts", value: "\(summary.attempts)", alignTrailing: true)
                 }
             }
 
@@ -111,7 +130,7 @@ struct HistoryView: View {
                                     roundsCompleted: session.completedRounds,
                                     totalRounds: session.template?.rounds ?? 0
                                 ),
-                                isPR: session.status == .completed && session.totalElapsedSeconds == summary.personalBestSeconds,
+                                isPR: bests.contains(session.id),
                                 showBottomDivider: index != sessions.count - 1,
                                 action: { selectedSession = session }
                             )
