@@ -37,9 +37,22 @@ enum TemplateDeletion {
         template.sessions.filter { $0.status != .inProgress }.count
     }
 
+    /// All or nothing.
+    ///
+    /// `context.delete` removes the template from the context immediately, so a
+    /// throwing `save` would otherwise leave the caller holding a deleted model
+    /// *and* an error — and the Start tab's recovery, which puts its selection
+    /// back on the template, would then be pointing `@State` at a deleted object
+    /// that the next body evaluation dereferences for its name. Rolling back
+    /// makes the failure mean what it says: nothing happened.
     static func delete(_ template: WorkoutTemplate, context: ModelContext) throws {
         if let blocker = blocker(for: template) { throw blocker }
         context.delete(template)
-        try context.save()
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
     }
 }

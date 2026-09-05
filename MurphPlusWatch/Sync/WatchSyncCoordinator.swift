@@ -93,8 +93,16 @@ final class WatchSyncCoordinator: NSObject, SessionTransport {
             // Same guarantee, no ceiling. The oversize case is the *final*
             // checkpoint of a long workout — the one that marks it complete —
             // so dropping it would lose the whole session on the phone.
-            let url = Self.stagingDirectory
-                .appendingPathComponent("checkpoint-\(payload.sessionID)-\(payload.checkpointSeq).json")
+            // Unique per *transfer*, not per checkpoint. The obvious name —
+            // session plus sequence — is deterministic, and the resend pass
+            // deliberately reproduces the same sequence for the same journal,
+            // so two transfers of one checkpoint could share a path: the first
+            // to finish would delete the file out from under the second, and
+            // the second write would overwrite a file the first was still
+            // queued on. Both are silent.
+            let url = Self.stagingDirectory.appendingPathComponent(
+                "checkpoint-\(payload.sessionID)-\(payload.checkpointSeq)-\(UUID().uuidString).json"
+            )
             do {
                 try FileManager.default.createDirectory(
                     at: Self.stagingDirectory, withIntermediateDirectories: true
@@ -231,6 +239,12 @@ extension WatchSyncCoordinator: WCSessionDelegate {
     /// handed off; ours is scratch space that must be cleaned up here, whether
     /// or not the transfer succeeded, or it accumulates one file per oversize
     /// checkpoint.
+    ///
+    /// Deleting *this* transfer's file the moment it finishes is safe, and
+    /// `sweepStagedCheckpoints` skipping files still in
+    /// `outstandingFileTransfers` is also right — the two are not in tension,
+    /// because staged names carry a per-transfer UUID and so no two transfers
+    /// ever share a file.
     nonisolated func session(
         _ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?
     ) {

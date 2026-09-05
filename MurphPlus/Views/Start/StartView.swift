@@ -131,7 +131,10 @@ struct StartView: View {
             // offering a template the phone no longer has.
             sync.pushContext()
         } catch {
-            // Put the selection back — the template is still there.
+            // Safe because `TemplateDeletion.delete` rolls the context back on a
+            // failed save: the template really is still there, rather than
+            // deleted-but-unsaved, so pointing the selection at it again cannot
+            // strand a body evaluation on a deleted model.
             selectedTemplate = template
             assertionFailure("Failed to delete template: \(error)")
         }

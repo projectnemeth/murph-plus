@@ -45,10 +45,12 @@ final class PhoneSyncCoordinator: NSObject {
             bests[key] = PersonalBest(templateID: templateID, vestOn: session.vestOn, seconds: seconds)
         }
 
+        let acknowledged = Self.acknowledgements(from: sessions)
         let payload = SyncContext(
             templates: templates.map(\.spec),
             personalBests: Array(bests.values),
-            acknowledgedSessionIDs: Self.acknowledgements(from: sessions)
+            acknowledgedSessionIDs: acknowledged.ids,
+            acknowledgementHorizon: acknowledged.horizon
         )
         guard let data = try? JSONEncoder().encode(payload) else { return }
         try? WCSession.default.updateApplicationContext([SyncKey.context: data])
@@ -63,16 +65,30 @@ final class PhoneSyncCoordinator: NSObject {
     ///
     /// Watch-origin only, since those are the only journals that exist, and
     /// capped at the most recent 100 so the application context cannot grow
-    /// without bound across years of workouts. The cap is safe: for a journal
-    /// to fall outside the window it would have to have gone unacknowledged
-    /// across a hundred later Watch workouts, and resending something in that
-    /// state is the right answer rather than a bug.
-    static func acknowledgements(from sessions: [MurphSession]) -> [UUID] {
-        sessions
+    /// without bound across years of workouts.
+    ///
+    /// The cap comes with a horizon, because on its own it is a trap: a journal
+    /// the phone already holds but which has fallen outside the window can
+    /// never be named, so the Watch resends it, the phone ignores it as a stale
+    /// sequence — without changing its acknowledgement set — and the same
+    /// journal is re-transferred on every pass forever. Returning the oldest
+    /// acknowledged date alongside the ids lets the Watch tell "not yet
+    /// acknowledged" from "beyond anything that will ever be acknowledged".
+    ///
+    /// `nil` horizon means the list was not capped and so covers everything.
+    static let acknowledgementLimit = 100
+
+    static func acknowledgements(
+        from sessions: [MurphSession]
+    ) -> (ids: [UUID], horizon: Date?) {
+        let terminal = sessions
             .filter { $0.origin == .watch && $0.status != .inProgress }
             .sorted { $0.date > $1.date }
-            .prefix(100)
-            .map(\.id)
+        let named = terminal.prefix(acknowledgementLimit)
+        return (
+            named.map(\.id),
+            terminal.count > acknowledgementLimit ? named.last?.date : nil
+        )
     }
 
     /// The durable path, and the only one that may create a `MurphSession`.

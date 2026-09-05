@@ -80,14 +80,28 @@ struct SyncContext: Codable, Equatable {
     /// each time rather than a delta.
     var acknowledgedSessionIDs: [UUID]
 
+    /// The date of the oldest session in `acknowledgedSessionIDs`, when that
+    /// list had to be capped — otherwise `nil`, meaning the list is complete.
+    ///
+    /// Without it the cap is a trap. A journal the phone already holds, but
+    /// which has fallen outside the capped window, can never be named — so the
+    /// Watch resends it, the phone ignores it as a stale sequence and its
+    /// acknowledgement set never changes, and the same journal is re-transferred
+    /// on every reconcile pass for the life of the install. The horizon closes
+    /// that loop: a terminal journal older than it is provably beyond what the
+    /// phone will ever acknowledge, so the Watch stops asking and lets it go.
+    var acknowledgementHorizon: Date?
+
     init(
         templates: [TemplateSpec],
         personalBests: [PersonalBest],
-        acknowledgedSessionIDs: [UUID] = []
+        acknowledgedSessionIDs: [UUID] = [],
+        acknowledgementHorizon: Date? = nil
     ) {
         self.templates = templates
         self.personalBests = personalBests
         self.acknowledgedSessionIDs = acknowledgedSessionIDs
+        self.acknowledgementHorizon = acknowledgementHorizon
     }
 
     /// Hand-written for one key only: `acknowledgedSessionIDs` must decode as
@@ -106,6 +120,10 @@ struct SyncContext: Codable, Equatable {
         personalBests = try container.decode([PersonalBest].self, forKey: .personalBests)
         acknowledgedSessionIDs =
             try container.decodeIfPresent([UUID].self, forKey: .acknowledgedSessionIDs) ?? []
+        // Absent means "the list is complete", which is also what an older
+        // phone's context means — it acknowledged everything it had.
+        acknowledgementHorizon =
+            try container.decodeIfPresent(Date.self, forKey: .acknowledgementHorizon)
     }
 }
 

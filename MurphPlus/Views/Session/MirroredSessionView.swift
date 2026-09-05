@@ -21,6 +21,16 @@ struct MirroredSessionView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var lastState: SessionState?
     @State private var didFinish = false
+    /// The elapsed time frozen at the moment the workout ended.
+    ///
+    /// Needed because the state this view caches never carries `completedAt`.
+    /// `LiveMirrorStore.receive` applies the terminal event and calls `clear()`
+    /// in the same synchronous turn, and `markFinished` clears without ever
+    /// exposing the terminal state — so SwiftUI is never handed a state that
+    /// says the workout is over. `SessionDerivation.elapsed` then falls back to
+    /// `now`, and the once-a-second `TimelineView` walked a finished Murph past
+    /// 51:12 into 51:13, 51:14, for as long as the screen stayed open.
+    @State private var finishedElapsed: TimeInterval?
 
     var body: some View {
         VStack(alignment: .leading, spacing: MurphSpacing.gapSection) {
@@ -45,7 +55,7 @@ struct MirroredSessionView: View {
                 TimelineView(.periodic(from: .now, by: 1)) { _ in
                     MurphClock(
                         label: "Elapsed",
-                        seconds: SessionDerivation.elapsed(state, now: .now),
+                        seconds: finishedElapsed ?? SessionDerivation.elapsed(state, now: .now),
                         size: .lg,
                         running: !didFinish && !state.isPaused && !mirror.isStale,
                         tone: didFinish ? .accent : .default
@@ -95,8 +105,17 @@ struct MirroredSessionView: View {
         .onChange(of: mirror.lastUpdate) { _, update in
             if update != nil {
                 lastState = mirror.state
-            } else if lastState != nil {
+                // A live event after a finish can only belong to a *new*
+                // session: `LiveMirrorStore` records the finished id and
+                // refuses its stragglers. This screen does not pop itself, so
+                // without the reset a second workout started on the Watch would
+                // be drawn live under a "Workout complete" title, with a
+                // Complete badge and a Done button.
+                didFinish = false
+                finishedElapsed = nil
+            } else if let ended = lastState {
                 didFinish = true
+                finishedElapsed = SessionDerivation.elapsed(ended, now: .now)
             }
         }
     }

@@ -187,4 +187,45 @@ final class JournalReconciliationTests: XCTestCase {
         XCTAssertEqual(transport.checkpoints.map(\.sessionID), [stranded.sessionID])
         XCTAssertEqual(try journalsOnDisk(), [stranded.sessionID])
     }
+
+    // MARK: - The acknowledgement horizon
+
+    /// A journal older than anything the phone can name would otherwise be
+    /// resent on every pass for the life of the install: the phone ignores it
+    /// as a stale sequence without changing its acknowledgement set, so it is
+    /// never acknowledged and never deleted.
+    func test_dropsAJournalOlderThanTheHorizon() throws {
+        let ancient = try finishedJournal(startedAt: 0)
+
+        controller.reconcileJournals(acknowledged: [], horizon: t(5_000))
+
+        XCTAssertTrue(transport.checkpoints.isEmpty)
+        XCTAssertFalse(try journalsOnDisk().contains(ancient.sessionID))
+    }
+
+    func test_keepsAndResendsAJournalNewerThanTheHorizon() throws {
+        let recent = try finishedJournal(startedAt: 10_000)
+
+        controller.reconcileJournals(acknowledged: [], horizon: t(5_000))
+
+        XCTAssertEqual(transport.checkpoints.map(\.sessionID), [recent.sessionID])
+        XCTAssertTrue(try journalsOnDisk().contains(recent.sessionID))
+    }
+
+    /// No horizon means the phone named everything it has, so nothing is beyond
+    /// it — dropping a journal here would discard a workout the phone has
+    /// simply not seen yet.
+    func test_withNoHorizonNothingIsDropped() throws {
+        let old = try finishedJournal(startedAt: 0)
+        controller.reconcileJournals(acknowledged: [], horizon: nil)
+        XCTAssertEqual(transport.checkpoints.map(\.sessionID), [old.sessionID])
+        XCTAssertTrue(try journalsOnDisk().contains(old.sessionID))
+    }
+
+    /// The horizon must not reach past the resume prompt's business.
+    func test_theHorizonNeverTouchesAnUnfinishedJournal() throws {
+        let unfinished = try unfinishedJournal(startedAt: 0)
+        controller.reconcileJournals(acknowledged: [], horizon: t(5_000))
+        XCTAssertTrue(try journalsOnDisk().contains(unfinished.sessionID))
+    }
 }

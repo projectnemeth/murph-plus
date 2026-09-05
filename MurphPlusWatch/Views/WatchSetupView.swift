@@ -36,6 +36,8 @@ struct WatchSetupView: View {
         Set(sync.context?.acknowledgedSessionIDs ?? [])
     }
 
+    private var acknowledgementHorizon: Date? { sync.context?.acknowledgementHorizon }
+
     @State private var selected: TemplateSpec?
     @AppStorage("watchVestOn") private var vestOn = false
     @AppStorage("watchVestWeight") private var vestWeight = 20
@@ -122,25 +124,39 @@ struct WatchSetupView: View {
             // bundle can reach it. The haptic is the watch's business.
             countdown.onTick = { _ in WKInterfaceDevice.current().play(.click) }
             await controller.requestAuthorization()
+            // Reconcile *first*, then ask what is resumable.
+            //
+            // Reconciliation can delete the very journal the prompt would
+            // offer: an unfinished journal whose session the phone already
+            // holds terminally — the ordinary outcome of the phone's stuck-
+            // session reaper abandoning it — is acknowledged, and being
+            // acknowledged is exactly what makes it safe to remove. Asking
+            // first would offer Resume for a journal about to disappear, and
+            // the user would tap it to no effect at all: `resumeExistingSession`
+            // returns false and nothing on screen changes.
+            controller.reconcileJournals(
+                acknowledged: acknowledgedSessionIDs, horizon: acknowledgementHorizon
+            )
+
             // The spec offers resume *or* abandon here. Auto-resuming would
             // not just be unfaithful: it is the only escape from a journal
             // that cannot be made terminal (an unwritable volume), which
             // otherwise drops the user into the same phantom workout on every
             // launch with no way out.
             showResumePrompt = controller.hasResumableSession()
-
-            // After the resume prompt is decided, not before: `reconcileJournals`
-            // skips unfinished journals precisely because that decision is the
-            // prompt's, and reading `hasResumableSession` first keeps the two
-            // in a defined order rather than a racing one.
-            controller.reconcileJournals(acknowledged: acknowledgedSessionIDs)
         }
         // The phone's acknowledgement list arrives asynchronously, and usually
         // *after* launch — a phone that was off during the workout sends it
         // when it comes back. Reconciling only on appear would leave the
         // stranded workout waiting for the next launch.
         .onChange(of: acknowledgedSessionIDs) { _, acknowledged in
-            controller.reconcileJournals(acknowledged: acknowledged)
+            controller.reconcileJournals(acknowledged: acknowledged, horizon: acknowledgementHorizon)
+            // The prompt may have been offering a journal that pass just
+            // removed. Re-asking closes it rather than leaving a dead button
+            // on screen.
+            if showResumePrompt, !controller.hasResumableSession() {
+                showResumePrompt = false
+            }
         }
     }
 
@@ -161,6 +177,15 @@ struct WatchSetupView: View {
                     Task {
                         if (try? await controller.resumeExistingSession()) == true {
                             showLive = true
+                        } else {
+                            // Reachable, and it used to be completely silent:
+                            // the journal can be gone by the time this runs
+                            // (reconciliation removed it because the phone
+                            // holds that session terminally), and the button
+                            // then did nothing with nothing said anywhere.
+                            SyncLog.note(
+                                "resume found no journal — it was reconciled away, or could not be read"
+                            )
                         }
                     }
                 }

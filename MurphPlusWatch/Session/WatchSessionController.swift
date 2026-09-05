@@ -417,7 +417,12 @@ final class WatchSessionController {
     /// - Parameter acknowledged: session ids the phone holds in a terminal
     ///   state, from `SyncContext`. An empty set is the safe reading — resend
     ///   what can be resent, delete nothing.
-    func reconcileJournals(acknowledged: Set<UUID>) {
+    /// - Parameter horizon: the date of the oldest session the phone was able
+    ///   to name, when its list had to be capped. A terminal journal older than
+    ///   this can never be acknowledged, so resending it would repeat forever;
+    ///   it is dropped instead. `nil` means the phone's list was complete and
+    ///   nothing is beyond it.
+    func reconcileJournals(acknowledged: Set<UUID>, horizon: Date? = nil) {
         guard let journals = try? SessionJournal.all(in: journalDirectory) else { return }
 
         // `journal.state` replays the whole journal on every read, and these
@@ -449,7 +454,22 @@ final class WatchSessionController {
             // they may be about to continue.
             let state = journal.state
             guard state.isTerminal else { continue }
-            pending.append((journal, state.startedAt ?? .distantPast))
+            let startedAt = state.startedAt ?? .distantPast
+
+            // Older than anything the phone can name. It will never be
+            // acknowledged, so resending it would repeat on every pass for the
+            // life of the install and retention would never reclaim it. Logged
+            // rather than dropped quietly — this is the one path here that
+            // discards a workout.
+            if let horizon, startedAt < horizon {
+                try? journal.delete()
+                SyncLog.note(
+                    "dropped journal \(journal.sessionID) — older than the phone's acknowledgement horizon"
+                )
+                continue
+            }
+
+            pending.append((journal, startedAt))
         }
 
         guard let transport, !pending.isEmpty else { return }
