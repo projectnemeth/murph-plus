@@ -1,5 +1,6 @@
 // MurphPlusWatch/Views/WatchSetupView.swift
 import SwiftUI
+import WatchKit
 
 /// Template list, then two segmented controls, then Start.
 ///
@@ -37,6 +38,9 @@ struct WatchSetupView: View {
     @AppStorage("watchIndoor") private var indoor = false
     @State private var showLive = false
     @State private var showResumePrompt = false
+    /// Owned here rather than by the countdown view so cancelling can tear the
+    /// count down without the view that draws it having to exist.
+    @State private var countdown = StartCountdown()
 
     var body: some View {
         NavigationStack {
@@ -75,11 +79,15 @@ struct WatchSetupView: View {
 
                     Button("Start") {
                         guard let spec = effectiveSelection else { return }
-                        Task {
+                        // Everything that creates state lives inside the
+                        // closure: a cancelled count must leave no journal, no
+                        // HealthKit session and no navigation behind.
+                        countdown.start {
                             await controller.startSession(
                                 template: spec, vestOn: vestOn,
                                 vestWeightLbs: vestOn ? vestWeight : nil, indoor: indoor
                             )
+                            WKInterfaceDevice.current().play(.start)
                             showLive = true
                         }
                     }
@@ -93,10 +101,22 @@ struct WatchSetupView: View {
                 WatchLiveView(controller: controller, sync: sync, onDone: { showLive = false })
             }
         }
+        // Covers the whole setup screen rather than presenting a sheet: a sheet
+        // is dismissible by swipe, and swiping a countdown away would leave the
+        // count running behind it with no way back to Cancel.
+        .overlay {
+            if let value = countdown.remaining {
+                WatchCountdownView(value: value) { countdown.cancel() }
+            }
+        }
         .sheet(isPresented: $showResumePrompt) {
             resumePrompt
         }
         .task {
+            // Set here, not at construction: `StartCountdown` lives in
+            // MurphCore and is deliberately WatchKit-free so the iOS test
+            // bundle can reach it. The haptic is the watch's business.
+            countdown.onTick = { _ in WKInterfaceDevice.current().play(.click) }
             await controller.requestAuthorization()
             // The spec offers resume *or* abandon here. Auto-resuming would
             // not just be unfaithful: it is the only escape from a journal
