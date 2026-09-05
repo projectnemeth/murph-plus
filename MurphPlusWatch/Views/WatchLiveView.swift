@@ -17,9 +17,13 @@ struct WatchLiveView: View {
     /// popping only this view would strand the user on a live view for a
     /// session that has already finished.
     let onDone: () -> Void
+    /// Which slot to land on. Only ever non-default from the DEBUG layout
+    /// harness, which cannot swipe a simulator and so opens each page directly.
+    var initialPage = 1
 
     @State private var selection = 1          // Count page is the landing page
     @State private var showAbandonConfirm = false
+    @State private var didApplyInitialPage = false
     // Real, writable presentation state. `controller.isFinished` never goes
     // back to false on its own (there is no reset path on the controller
     // short of `finishAndReset()`, which only runs after Done is tapped), so
@@ -35,7 +39,6 @@ struct WatchLiveView: View {
             TabView(selection: $selection) {
                 ControlsPage(
                     controller: controller,
-                    elapsedText: elapsedText,
                     showAbandonConfirm: $showAbandonConfirm
                 )
                 .tag(0)
@@ -50,8 +53,43 @@ struct WatchLiveView: View {
                     .tag(3)
             }
             .tabViewStyle(.verticalPage)
+            // Once, not on every appearance: `selection` is deliberately
+            // never reset while a session is live (see above), and `onAppear`
+            // fires again whenever this view comes back into view.
+            .onAppear {
+                guard !didApplyInitialPage else { return }
+                didApplyInitialPage = true
+                selection = initialPage
+            }
         }
         .navigationBarBackButtonHidden(true)
+        // The phase, level with the system clock, on every page at once.
+        //
+        // `topBarLeading` is the system's own slot for this — the built-in
+        // Workout app puts its elapsed time there — so it is level with the
+        // time by construction and inset clear of the round display's
+        // corner by the system. Both are things the old in-band corner
+        // label had to guess at, and got wrong at 46mm.
+        //
+        // Declared here rather than per page so it does not blink out and
+        // back during a page swipe, and so the controls page — which no
+        // longer carries a status band at all — still says what phase the
+        // workout is in.
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                if let phase = WatchPhaseLabel.text(
+                    phase: controller.state.phase, isPaused: controller.isPaused
+                ) {
+                    Text(phase)
+                        .murphType(.tag)
+                        // Amber for paused: a user who paused and walked
+                        // away needs to catch that without reading it.
+                        .foregroundStyle(
+                            controller.isPaused ? MurphColor.dust500 : MurphColor.bone200
+                        )
+                }
+            }
+        }
         .confirmationDialog(
             "Abandon this session?",
             isPresented: $showAbandonConfirm,

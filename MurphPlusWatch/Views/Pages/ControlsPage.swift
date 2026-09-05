@@ -6,25 +6,23 @@ import SwiftUI
 ///
 /// Undo is **disabled rather than absent** when unavailable, so the page does
 /// not reshuffle mid-workout.
+///
+/// **No status strip.** The other three pages carry the numbers; this page is
+/// controls only. The strip here bought nothing — elapsed and the round count
+/// are one swipe away on either metric page — while costing the collision with
+/// the system clock that made the whole band unreadable at 46mm.
+///
+/// A `ScrollView` rather than a bare `VStack`, for two reasons: three buttons
+/// plus the time indicator's clearance do not fit a 40mm screen, and a scroll
+/// view is handed the system's top safe-area inset automatically, so the first
+/// button clears the clock without a hard-coded constant. The built-in Workout
+/// app's own controls page scrolls inside its paged tab view the same way.
 struct ControlsPage: View {
     @Bindable var controller: WatchSessionController
-    let elapsedText: String
     @Binding var showAbandonConfirm: Bool
 
     var body: some View {
-        VStack(spacing: 0) {
-            WatchStatusStrip(
-                leading: .init(label: "Elapsed", value: elapsedText, tone: MurphColor.hazard500),
-                trailing: .init(label: "Round",
-                                value: "\(controller.state.completedRounds)/\(controller.state.template?.rounds ?? 0)"),
-                corner: WatchPhaseLabel.text(
-                    phase: controller.state.phase, isPaused: controller.isPaused
-                ),
-                cornerTone: controller.isPaused ? MurphColor.dust500 : MurphColor.bone200
-            )
-
-            Spacer(minLength: MurphSpacing.space3)
-
+        ScrollView {
             VStack(spacing: MurphSpacing.space2) {
                 Button(controller.isPaused ? "Resume" : "Pause") {
                     controller.isPaused ? controller.resume() : controller.pause()

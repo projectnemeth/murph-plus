@@ -14,11 +14,7 @@ struct PrimaryPage: View {
                 leading: .init(label: "Elapsed", value: elapsedText, tone: MurphColor.hazard500),
                 trailing: .init(label: "BPM",
                                 value: controller.heartRate.map(String.init) ?? "—",
-                                tone: MurphColor.lime500),
-                corner: WatchPhaseLabel.text(
-                    phase: controller.state.phase, isPaused: controller.isPaused
-                ),
-                cornerTone: controller.isPaused ? MurphColor.dust500 : MurphColor.bone200
+                                tone: MurphColor.lime500)
             )
 
             Spacer(minLength: MurphSpacing.space3)

@@ -16,7 +16,18 @@ struct MurphPlusWatchApp: App {
 
     var body: some Scene {
         WindowGroup {
+            #if DEBUG
+            // Layout harness: opens the live pages directly for screenshotting.
+            // See `WatchLayoutHarness` — the simulator cannot be tapped, so
+            // this is the only way to look at those pages from the CLI.
+            if WatchLayoutHarness.isActive {
+                WatchLayoutHarnessView()
+            } else {
+                WatchSetupView(controller: controller, sync: sync)
+            }
+            #else
             WatchSetupView(controller: controller, sync: sync)
+            #endif
         }
     }
 }
