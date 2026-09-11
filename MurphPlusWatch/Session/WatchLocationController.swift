@@ -24,7 +24,11 @@ final class WatchLocationController: NSObject, LocationProviding {
     /// A fix this good or better counts as usable. Apple Watch typically
     /// reaches 5-10 m outdoors; 20 m is loose enough not to stall the start
     /// gate and tight enough to exclude a fix that is still settling.
-    static let usableAccuracyMeters: CLLocationAccuracy = 20
+    ///
+    /// `nonisolated` because the delegate reads it off the main actor: it is
+    /// an immutable Sendable value, so the isolation the class would otherwise
+    /// impose buys nothing and costs a Swift 6 error.
+    nonisolated static let usableAccuracyMeters: CLLocationAccuracy = 20
 
     private let manager = CLLocationManager()
     private(set) var fixState: GPSFixState = .off
@@ -35,12 +39,11 @@ final class WatchLocationController: NSObject, LocationProviding {
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
         manager.activityType = .fitness
-        // No `pausesLocationUpdatesAutomatically` here: the property is
-        // `API_UNAVAILABLE(watchos, tvos)` in CoreLocation's header — it does
-        // not exist on this platform, so there is no automatic-pause behavior
-        // to disable in the first place (unlike iOS, where leaving it at its
-        // default would be poison for a workout that includes standing still
-        // at a pull-up bar).
+        // No `pausesLocationUpdatesAutomatically` here: it is
+        // API_UNAVAILABLE(watchos). Core Location's auto-pause-when-stationary
+        // behaviour, which would be poison in a workout that includes standing
+        // still at a pull-up bar, appears not to exist on this platform — there
+        // is nothing to switch off.
         // Requires `UIBackgroundModes: [location]` in the built Info.plist.
         // Without it this line is a fatal error that terminates the app, which
         // is why the plist key and this property ship in one commit.
