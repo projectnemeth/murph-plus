@@ -17,7 +17,7 @@ struct RootTabView: View {
 
     var body: some View {
         TabView {
-            StartView(location: location) { setup in
+            StartView(location: location, sessionIsLive: liveEngine != nil) { setup in
                 liveEngine = SessionEngine.startNew(
                     template: setup.template, vestOn: setup.vestOn,
                     vestWeightLbs: setup.vestWeightLbs, indoor: setup.indoor,

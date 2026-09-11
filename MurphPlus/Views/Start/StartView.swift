@@ -13,6 +13,17 @@ struct StartView: View {
     @State private var indoor = false
 
     let location: PhoneLocationController
+    /// Whether a session engine currently exists.
+    ///
+    /// Once one does, IT owns the receiver: `SessionEngine.reconcileLocation`
+    /// asserts the correct state at every transition, and this screen must not
+    /// countermand it. Load-bearing on the resume path — a session resumed
+    /// mid-run has its receiver switched on by `SessionEngine.init`, and this
+    /// view may disappear immediately afterwards as the cover presents over
+    /// it. Stopping unconditionally there would kill the receiver for the rest
+    /// of that run, with nothing to restart it until the next transition, by
+    /// which point `finishRun` has already read the distance.
+    let sessionIsLive: Bool
     let onBegin: (SessionSetup) -> Void
 
     @Environment(PhoneSyncCoordinator.self) private var sync
@@ -94,7 +105,10 @@ struct StartView: View {
                     reconcileWarmUp()
                 }
                 .onChange(of: indoor) { _, _ in reconcileWarmUp() }
-                .onDisappear { location.stopUpdating() }
+                .onDisappear {
+                    guard !sessionIsLive else { return }
+                    location.stopUpdating()
+                }
                 .sheet(isPresented: $showTemplateEditor) {
                     TemplateEditorView()
                 }
@@ -285,6 +299,7 @@ struct StartView: View {
     /// Asserted unconditionally rather than tracked, because `startUpdating`
     /// and `stopUpdating` are idempotent by contract.
     private func reconcileWarmUp() {
+        guard !sessionIsLive else { return }
         if indoor { location.stopUpdating() } else { location.startUpdating() }
     }
 }
@@ -294,7 +309,7 @@ struct StartView: View {
         for: WorkoutTemplate.self, MurphSession.self, RunSplit.self, RoundLog.self,
         configurations: ModelConfiguration(isStoredInMemoryOnly: true)
     )
-    return StartView(location: PhoneLocationController()) { _ in }
+    return StartView(location: PhoneLocationController(), sessionIsLive: false) { _ in }
         .modelContainer(container)
         .environment(PhoneSyncCoordinator(container: container))
 }
