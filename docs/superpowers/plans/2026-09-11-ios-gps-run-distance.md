@@ -14,7 +14,8 @@
 
 - **`MurphCore` imports Foundation and nothing else.** No CoreLocation, no HealthKit, no SwiftUI. It compiles into both targets and the iOS bundle is the only test bundle in the project.
 - **`LocationPolicy` is not modified.** Its single-round defect is inherited deliberately (spec, "Scope"). `LocationPolicyTests` must pass unedited.
-- **`SessionEngineTests` must pass unedited.** Every new `SessionEngine` dependency is defaulted for this reason.
+- **`SessionEngineTests` keeps every assertion, arrangement and expectation unedited.** Every new `SessionEngine` dependency is defaulted for this reason. The one permitted edit is the class-level `@MainActor` annotation required by Ruling 1 below — a concurrency annotation is not a behavioural edit, and the proof that behaviour is preserved is the assertions, which do not move.
+- **`SessionEngine` is `@MainActor`** (Ruling 1, pre-flight). `LocationProviding` and `RunDistanceMeasuring` are both `@MainActor`, so an unisolated `SessionEngine` cannot call them from a synchronous context. This is verbatim the precedent at `MurphPlusWatch/Session/WatchSessionController.swift:9-18`: "`@MainActor` because `WorkoutControlling` is: every call into it needs main-actor context, and this class is `@Observable` and drives SwiftUI." The three test classes that construct a `SessionEngine` gain the same annotation: `SessionEngineTests`, `SessionEnginePauseRelaunchTests`, `RoundThroughputPauseTests`.
 - **The watch is not modified.** `WatchLocationController`, `WatchSessionController`, `WorkoutSessionController` and every watch view stay as they are.
 - **`UIBackgroundModes: [location]` and `allowsBackgroundLocationUpdates = true` ship in ONE commit** (Task 4). Split apart, the first launch after the property lands is a fatal `NSInternalInconsistencyException`.
 - **Re-run `xcodegen generate` after adding any new source file**, before building. New files are invisible to the build otherwise.
@@ -514,7 +515,8 @@ around the pull-up bar into run 2's distance."
 
 **Files:**
 - Modify: `MurphPlus/Models/MurphSession.swift:50-55` (add `indoor` to `init`)
-- Modify: `MurphPlus/Session/SessionEngine.swift` (init, `startNew`, `perform`, `finishRun`)
+- Modify: `MurphPlus/Session/SessionEngine.swift` (add `@MainActor`; init, `startNew`, `perform`, `finishRun`)
+- Modify: `MurphPlusTests/SessionEngineTests.swift:6`, `MurphPlusTests/SessionEnginePauseRelaunchTests.swift:26`, `MurphPlusTests/RoundThroughputPauseTests.swift` (add `@MainActor` to each class declaration — nothing else)
 - Test: `MurphPlusTests/SessionEngineLocationTests.swift`
 
 **Interfaces:**
@@ -724,7 +726,28 @@ Expected: FAIL — `extra argument 'location' in call`.
 
 - [ ] **Step 4: Wire `SessionEngine`**
 
-In `MurphPlus/Session/SessionEngine.swift`, add the stored properties and change `init` (currently lines 17-21):
+First, isolate the type. Add `@MainActor` above the existing `@Observable` on
+line 13, and extend the docstring to say why — matching the wording
+`WatchSessionController` already uses:
+
+```swift
+/// `@MainActor` because `LocationProviding` and `RunDistanceMeasuring` are:
+/// every call into them needs main-actor context, and this class is
+/// `@Observable` and drives SwiftUI. Same reasoning as
+/// `WatchSessionController`.
+@MainActor
+@Observable
+final class SessionEngine {
+```
+
+Then add `@MainActor` to the class declaration of each test that constructs one
+— `SessionEngineTests` (line 6), `SessionEnginePauseRelaunchTests` (line 26),
+and `RoundThroughputPauseTests`. **Change nothing else in those three files:**
+no assertion, no arrangement, no expectation. If any of them needs a further
+edit to compile, stop and report it — that is a signal the isolation is
+cascading further than the pre-flight scan predicted.
+
+Now add the stored properties and change `init` (currently lines 17-21):
 
 ```swift
     private let location: SessionLocation?
@@ -869,13 +892,18 @@ xcodebuild test -project MurphPlus.xcodeproj -scheme MurphPlus \
   -only-testing:MurphPlusTests/LocationPolicyTests 2>&1 | tail -25
 ```
 
-Expected: PASS, both suites, **with no edits to either file**. If `SessionEngineTests` needed changing, the dependency was not defaulted correctly.
+Expected: PASS, both suites. `LocationPolicyTests` is untouched entirely.
+`SessionEngineTests` has exactly one added line — its `@MainActor` annotation —
+and every assertion is unchanged. If it needed any other edit, the dependency
+was not defaulted correctly.
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add MurphPlus/Session/SessionEngine.swift MurphPlus/Models/MurphSession.swift \
-        MurphPlusTests/SessionEngineLocationTests.swift MurphPlus.xcodeproj
+        MurphPlusTests/SessionEngineLocationTests.swift MurphPlusTests/SessionEngineTests.swift \
+        MurphPlusTests/SessionEnginePauseRelaunchTests.swift MurphPlusTests/RoundThroughputPauseTests.swift \
+        MurphPlus.xcodeproj
 git commit -m "feat: reconcile GPS and capture run distance in SessionEngine
 
 Mirrors WatchSessionController: the receiver is asserted against
