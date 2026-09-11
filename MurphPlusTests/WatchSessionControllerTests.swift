@@ -48,11 +48,42 @@ final class FakeWorkoutController: WorkoutControlling {
     func finish() async { calls.append(.finish) }
 }
 
+/// A `LocationProviding` that records what it was asked to do.
+///
+/// Same reasoning as `FakeWorkoutController`: the contract under test is a
+/// *sequence of calls* — warm for the run, stop for the rounds, warm again
+/// before run 2 — and only a recording double can assert on it.
+@MainActor
+final class FakeLocationController: LocationProviding {
+    enum Call: Equatable {
+        case requestAuthorization
+        case start
+        case stop
+    }
+
+    private(set) var calls: [Call] = []
+    var fixState: GPSFixState = .off
+
+    /// Only the transitions, with repeats collapsed. `startUpdating` is
+    /// idempotent by contract and is called after every event, so the raw
+    /// list is mostly noise; this is the shape a test actually cares about.
+    var transitions: [Call] {
+        calls.filter { $0 != .requestAuthorization }.reduce(into: []) { out, call in
+            if out.last != call { out.append(call) }
+        }
+    }
+
+    func requestAuthorization() async { calls.append(.requestAuthorization) }
+    func startUpdating() { calls.append(.start) }
+    func stopUpdating() { calls.append(.stop) }
+}
+
 @MainActor
 final class WatchSessionControllerTests: XCTestCase {
 
     private var directory: URL!
     private var fake: FakeWorkoutController!
+    private var gps: FakeLocationController!
     private var controller: WatchSessionController!
 
     private let base = Date(timeIntervalSince1970: 1_700_000_000)
@@ -70,7 +101,10 @@ final class WatchSessionControllerTests: XCTestCase {
             .appendingPathComponent("watch-controller-tests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         fake = FakeWorkoutController()
-        controller = WatchSessionController(workout: fake, journalDirectory: directory)
+        gps = FakeLocationController()
+        controller = WatchSessionController(
+            workout: fake, journalDirectory: directory, location: gps
+        )
     }
 
     override func tearDownWithError() throws {
@@ -279,5 +313,147 @@ final class WatchSessionControllerTests: XCTestCase {
 
         XCTAssertNotNil(controller.journal)
         XCTAssertFalse(controller.journalWriteFailed)
+    }
+
+    // MARK: - GPS lifecycle
+
+    /// Walks a whole outdoor workout and asserts the receiver's on/off shape.
+    /// This is the plan's headline behaviour in one test.
+    func test_gpsRunsForTheRunsAndStopsForTheRounds() async throws {
+        await controller.startSession(
+            template: spec(rounds: 3), vestOn: false, vestWeightLbs: nil, indoor: false
+        )
+        XCTAssertEqual(gps.transitions, [.start])          // run 1
+
+        controller.advance()                                // run 1 ends, rounds begin
+        XCTAssertEqual(gps.transitions, [.start, .stop])
+
+        controller.advance()                                // round 1 of 3 — still off
+        XCTAssertEqual(gps.transitions, [.start, .stop])
+
+        controller.advance()                                // round 2 of 3 — one remains
+        XCTAssertEqual(gps.transitions, [.start, .stop, .start])
+
+        controller.advance()                                // round 3 — run 2 begins
+        XCTAssertEqual(gps.transitions, [.start, .stop, .start])
+
+        controller.advance()                                // run 2 ends, complete
+        XCTAssertEqual(gps.transitions, [.start, .stop, .start, .stop])
+    }
+
+    func test_indoorSessionNeverStartsTheReceiver() async throws {
+        await controller.startSession(
+            template: spec(rounds: 3), vestOn: false, vestWeightLbs: nil, indoor: true
+        )
+        controller.advance()
+        controller.advance()
+        controller.advance()
+        controller.advance()
+        controller.advance()
+
+        XCTAssertFalse(gps.calls.contains(.start))
+    }
+
+    /// A pause mid-run leaves the receiver on: re-acquiring on resume costs
+    /// more than the battery a short pause saves.
+    func test_pauseLeavesTheReceiverRunning() async throws {
+        await controller.startSession(
+            template: spec(rounds: 3), vestOn: false, vestWeightLbs: nil, indoor: false
+        )
+        controller.pause()
+        controller.resume()
+
+        XCTAssertEqual(gps.transitions, [.start])
+    }
+
+    func test_abandoningStopsTheReceiver() async throws {
+        await controller.startSession(
+            template: spec(rounds: 3), vestOn: false, vestWeightLbs: nil, indoor: false
+        )
+        controller.abandon()
+
+        XCTAssertEqual(gps.transitions.last, .stop)
+    }
+
+    func test_finishAndResetStopsTheReceiver() async throws {
+        await controller.startSession(
+            template: spec(rounds: 3), vestOn: false, vestWeightLbs: nil, indoor: false
+        )
+        controller.finishAndReset()
+
+        XCTAssertEqual(gps.transitions.last, .stop)
+    }
+
+    /// Recovery needs no special path — replay the journal, ask the policy.
+    func test_resumingMidRunRestartsTheReceiver() async throws {
+        await controller.startSession(
+            template: spec(rounds: 3), vestOn: false, vestWeightLbs: nil, indoor: false
+        )
+
+        let fresh = FakeLocationController()
+        let revived = WatchSessionController(
+            workout: FakeWorkoutController(), journalDirectory: directory, location: fresh
+        )
+        let resumed = try await revived.resumeExistingSession()
+
+        XCTAssertTrue(resumed)
+        XCTAssertEqual(fresh.transitions, [.start])
+    }
+
+    func test_resumingMidRoundsDoesNotStartTheReceiver() async throws {
+        await controller.startSession(
+            template: spec(rounds: 20), vestOn: false, vestWeightLbs: nil, indoor: false
+        )
+        controller.advance()   // into the rounds, 20 to go
+
+        let fresh = FakeLocationController()
+        let revived = WatchSessionController(
+            workout: FakeWorkoutController(), journalDirectory: directory, location: fresh
+        )
+        let resumed = try await revived.resumeExistingSession()
+
+        XCTAssertTrue(resumed)
+        XCTAssertFalse(fresh.calls.contains(.start))
+    }
+
+    /// Relaunching one round from run 2 must come back already warming.
+    func test_resumingAtThePenultimateRoundRestartsTheReceiver() async throws {
+        await controller.startSession(
+            template: spec(rounds: 3), vestOn: false, vestWeightLbs: nil, indoor: false
+        )
+        controller.advance()   // rounds begin
+        controller.advance()   // round 1
+        controller.advance()   // round 2 — one remains
+
+        let fresh = FakeLocationController()
+        let revived = WatchSessionController(
+            workout: FakeWorkoutController(), journalDirectory: directory, location: fresh
+        )
+        let resumed = try await revived.resumeExistingSession()
+
+        XCTAssertTrue(resumed)
+        XCTAssertEqual(fresh.transitions, [.start])
+    }
+
+    func test_requestAuthorizationAsksBothSensors() async throws {
+        await controller.requestAuthorization()
+
+        XCTAssertTrue(fake.calls.contains(.requestAuthorization))
+        XCTAssertTrue(gps.calls.contains(.requestAuthorization))
+    }
+
+    /// The setup-screen warm-up sits outside the policy on purpose: the policy
+    /// answers "where is the session", and on the setup screen there is none.
+    func test_setupWarmupStartsAndStopsDirectly() {
+        controller.warmLocationForSetup(true)
+        XCTAssertEqual(gps.transitions, [.start])
+
+        controller.warmLocationForSetup(false)
+        XCTAssertEqual(gps.transitions, [.start, .stop])
+    }
+
+    func test_gpsFixStateIsOffWithNoProvider() {
+        let bare = WatchSessionController(workout: FakeWorkoutController(), journalDirectory: directory)
+        XCTAssertEqual(bare.gpsFixState, .off)
     }
 }
