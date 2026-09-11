@@ -116,8 +116,16 @@ enum LocationPolicy {
 
 The rule:
 
-> Not `indoor`, **and** either the phase is `.run1`/`.run2`, **or** the phase is
-> `.rounds` with `template.safeRounds - completedRounds <= 1`.
+> Not `indoor`, **not terminal**, and either the phase is `.run1`/`.run2`, **or**
+> the phase is `.rounds` with `template.safeRounds - completedRounds <= 1`.
+
+The terminal guard is not belt-and-braces. `abandon` sets `status` but
+deliberately leaves `phase` where it was — phase is the record of how far the
+attempt got, and the history screens display it (`SessionState.swift:148-149`).
+A Murph abandoned mid-run therefore reads `.run1` forever, so a phase-only rule
+would leave the receiver running until the app died. Found by the Task 3
+implementer; the rule shipped without it would have been a battery leak on every
+abandoned outdoor session.
 
 Expressed as *rounds remaining ≤ 1* rather than "on round N−1", which buys two
 things for free:
