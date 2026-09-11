@@ -331,11 +331,21 @@ final class LocationFixGateTests: XCTestCase {
     }
 
     /// Start anyway. Available from the first frame, not after a delay.
+    ///
+    /// `poll: 0.001` puts `maxPolls` at 100_000 — roughly 100 seconds at the
+    /// 1 ms injected sleep, far outside the fulfillment window below. That is
+    /// deliberate: with a bound the loop could reach on its own, this test
+    /// would pass just as happily if `skip()` did nothing at all, which is
+    /// exactly the regression it exists to catch.
     func test_skipEndsTheWaitEarly() async {
-        let g = gate(timeout: 100, poll: 0.1)
+        let g = gate(timeout: 100, poll: 0.001)
+        var polls = 0
         let done = expectation(description: "gate returned")
         Task {
-            await g.wait { .acquiring }
+            await g.wait {
+                polls += 1
+                return .acquiring
+            }
             done.fulfill()
         }
         // Let the wait get going, then release it.
@@ -343,6 +353,9 @@ final class LocationFixGateTests: XCTestCase {
         g.skip()
         await fulfillment(of: [done], timeout: 2)
         XCTAssertFalse(g.isWaiting)
+        // Nowhere near the 100_000 bound: the wait ended because it was
+        // skipped, not because it ran out.
+        XCTAssertLessThan(polls, 1_000)
     }
 
     /// The bound is the whole reason this is safe: the standing contract is
