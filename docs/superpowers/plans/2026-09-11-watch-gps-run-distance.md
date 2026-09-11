@@ -995,10 +995,11 @@ final class WatchLocationController: NSObject, LocationProviding {
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
         manager.activityType = .fitness
-        // The default lets Core Location stop updates when it decides the user
-        // has stopped moving — poison in a workout that includes standing
-        // still at a pull-up bar.
-        manager.pausesLocationUpdatesAutomatically = false
+        // No `pausesLocationUpdatesAutomatically` here: it is
+        // API_UNAVAILABLE(watchos). Core Location's auto-pause-when-stationary
+        // behaviour, which would be poison in a workout that includes standing
+        // still at a pull-up bar, appears not to exist on this platform — there
+        // is nothing to switch off.
         // Requires `UIBackgroundModes: [location]` in the built Info.plist.
         // Without it this line is a fatal error that terminates the app, which
         // is why the plist key and this property ship in one commit.
