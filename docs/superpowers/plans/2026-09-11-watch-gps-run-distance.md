@@ -1128,7 +1128,7 @@ Expected: both succeed, all tests still pass.
 This check exists because an Apple engineer confirmed a case where **the build system stripped this exact key** from the built plist while it was correctly set in source. Reading `project.yml` is not proof.
 
 ```bash
-APP=$(find ~/Library/Developer/Xcode/DerivedData -name 'MurphPlusWatch.app' -path '*Debug-watchos*' -print -quit)
+APP=$(find ~/Library/Developer/Xcode/DerivedData -name 'MurphPlusWatch.app' -path '*Debug-watchos*' -not -path '*Index.noindex*' -print -quit)
 plutil -p "$APP/Info.plist" | grep -A3 -E 'UIBackgroundModes|WKBackgroundModes'
 ```
 
@@ -1308,7 +1308,7 @@ Nothing in Tasks 1-5 can prove the feature works — the acceptance criterion is
 - [ ] **Step 1: Confirm the built plist one more time**
 
 ```bash
-APP=$(find ~/Library/Developer/Xcode/DerivedData -name 'MurphPlusWatch.app' -path '*watchos*' -print -quit)
+APP=$(find ~/Library/Developer/Xcode/DerivedData -name 'MurphPlusWatch.app' -path '*watchos*' -not -path '*Index.noindex*' -print -quit)
 plutil -p "$APP/Info.plist" | grep -A3 -E 'UIBackgroundModes|WKBackgroundModes|NSLocation'
 ```
 
