@@ -130,9 +130,18 @@ abandoned outdoor session.
 Expressed as *rounds remaining ≤ 1* rather than "on round N−1", which buys two
 things for free:
 
-- A **single-round template** is handled correctly without a special case — at
-  rounds-start the condition is already true, so the receiver simply never
-  powers down.
+- A **single-round template** needs no special case — but "no special case"
+  cuts both ways here. At rounds-start the condition (`safeRounds -
+  completedRounds <= 1`) is already true, so on a single-round template the
+  receiver **never powers down for the whole calisthenics block**: `1 - 0 = 1`
+  from the first rep to the last. On Full Murph (Straight Sets) — the app's
+  default template, first in the list and what `effectiveSelection` falls back
+  to — that block is 100 pull-ups, 200 push-ups and 300 squats, typically
+  25–45 minutes, none of it saved. The multi-round templates (Cindy-Style at
+  20, Half Murph at 10, Mini Murph at 5) each get the intended near-total
+  window off, since remaining stays above 1 for most of the rounds. A real fix
+  for the single-round case would need a time- or rep-based trigger instead of
+  a round-count one, and is out of this spec's scope.
 - **Relaunch recovery** needs no separate path. Replay the journal, ask the
   policy, obey the answer. The recovered case and the live case are the same
   code.
@@ -201,8 +210,13 @@ Outdoor is selected, stops it on Indoor and on teardown, and hosts the gate.
 re-acquiring a fix on resume costs more than the battery a short pause saves.
 
 **Rounds are the long part** — twenty rounds of Cindy run far longer than two
-miles of running — so switching off there is where nearly all the saving is.
-Roughly 20 minutes of receiver time across a 60-minute Murph instead of 60.
+miles of running — so switching off there is where nearly all the saving is,
+*for a multi-round template*. Roughly 20 minutes of receiver time across a
+60-minute Cindy-Style Murph instead of 60. That claim does not hold for every
+template: on the single-round Full Murph — the default — `completedRounds`
+never gets far enough from `safeRounds` to trip the off condition, so the
+receiver runs the entire calisthenics block and the saving is closer to zero.
+See the single-round caveat in the `LocationPolicy` section above.
 
 ## The start gate
 
@@ -337,7 +351,13 @@ first suspect and the presumption is wrong.
 nothing; too loose and it starts on a drifting fix. It ships as one named
 constant, tuned against the known route.
 
-Both are tuning questions. Neither blocks the design.
+**What does a full run of the straight-sets Murph actually cost the battery?**
+That template is the one configuration where the receiver never powers down —
+see the single-round caveat above — so it is the worst case for battery drain
+and the one worth measuring on hardware specifically, rather than assuming the
+Cindy-Style numbers generalize.
+
+All three are tuning/measurement questions. None blocks the design.
 
 ## Sources
 
