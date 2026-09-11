@@ -42,6 +42,7 @@ struct WatchSetupView: View {
     @AppStorage("watchVestOn") private var vestOn = false
     @AppStorage("watchVestWeight") private var vestWeight = 20
     @AppStorage("watchIndoor") private var indoor = false
+    @State private var gate = LocationFixGate()
     @State private var showLive = false
     @State private var showResumePrompt = false
     /// Owned here rather than by the countdown view so cancelling can tear the
@@ -80,7 +81,8 @@ struct WatchSetupView: View {
                     segmented(
                         left: "Outdoor", right: "Indoor",
                         leftSelected: !indoor,
-                        onLeft: { indoor = false }, onRight: { indoor = true }
+                        onLeft: { indoor = false; controller.warmLocationForSetup(true) },
+                        onRight: { indoor = true; controller.warmLocationForSetup(false) }
                     )
 
                     Button("Start") {
@@ -89,6 +91,11 @@ struct WatchSetupView: View {
                         // closure: a cancelled count must leave no journal, no
                         // HealthKit session and no navigation behind.
                         countdown.start {
+                            // Returns at once unless GPS is still acquiring,
+                            // which after the warm-up above is the rare case.
+                            // Bounded and skippable: no sensor blocks a
+                            // workout.
+                            await gate.wait { controller.gpsFixState }
                             await controller.startSession(
                                 template: spec, vestOn: vestOn,
                                 vestWeightLbs: vestOn ? vestWeight : nil, indoor: indoor
@@ -113,10 +120,19 @@ struct WatchSetupView: View {
         .overlay {
             if let value = countdown.remaining {
                 WatchCountdownView(value: value) { countdown.cancel() }
+            } else if gate.isWaiting {
+                WatchAcquiringGPSView { gate.skip() }
             }
         }
         .sheet(isPresented: $showResumePrompt) {
             resumePrompt
+        }
+        .onDisappear {
+            // Pushing WatchLiveView fires this too, and there the session owns
+            // the receiver from `startSession` onward — stopping it here would
+            // kill GPS in the first seconds of run 1. Only stop when we are
+            // genuinely leaving setup without a workout.
+            if !showLive { controller.warmLocationForSetup(false) }
         }
         .task {
             // Set here, not at construction: `StartCountdown` lives in
@@ -124,6 +140,10 @@ struct WatchSetupView: View {
             // bundle can reach it. The haptic is the watch's business.
             countdown.onTick = { _ in WKInterfaceDevice.current().play(.click) }
             await controller.requestAuthorization()
+            // Warm from the moment the screen appears, so the receiver has
+            // been running for tens of seconds by the time Start is tapped.
+            // This is what makes the gate below almost never visible.
+            controller.warmLocationForSetup(!indoor)
             // Reconcile *first*, then ask what is resumable.
             //
             // Reconciliation can delete the very journal the prompt would
