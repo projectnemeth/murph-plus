@@ -145,10 +145,16 @@ no unit tests.
 
 - `desiredAccuracy = kCLLocationAccuracyBest`
 - `activityType = .fitness`
-- `pausesLocationUpdatesAutomatically = false` — the default lets Core Location
-  stop updates when it decides you have stopped moving, which is poison during a
-  workout that includes standing still.
 - `allowsBackgroundLocationUpdates = true` — see **Background modes** below.
+
+An earlier draft of this spec also listed `pausesLocationUpdatesAutomatically =
+false`, to stop Core Location pausing updates when it decides you have stopped
+moving — which would be poison in a workout that includes standing still at a
+pull-up bar. **That property does not exist on watchOS.** The SDK header
+declares it `API_AVAILABLE(ios(6.0), macos(10.15)) API_UNAVAILABLE(watchos,
+tvos)`, and Apple's platform list omits watchOS. Found at implementation time.
+The behaviour it would have suppressed appears absent on this platform, so there
+is nothing to disable — but see the open questions below.
 - Publishes `.fixed` on the first sample with `horizontalAccuracy <= 20` metres;
   holds `.acquiring` until then.
 
@@ -320,6 +326,12 @@ resolves early; the 30-second bound fires.
 correctly? [Forum reports](https://developer.apple.com/forums/thread/685390)
 suggest it can. Correct configuration is necessary; whether it is sufficient is
 not something this spec can assert from documentation.
+
+**Does watchOS pause updates when you stand still?** `pausesLocationUpdates`
+`Automatically` is unavailable on watchOS, so the auto-pause behaviour is
+presumed absent rather than merely unsuppressed. If a run's distance stalls
+while standing at the pull-up bar and resumes when moving again, this is the
+first suspect and the presumption is wrong.
 
 **Is 20 metres the right accuracy threshold?** Too strict and the gate waits for
 nothing; too loose and it starts on a drifting fix. It ships as one named
