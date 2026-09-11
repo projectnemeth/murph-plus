@@ -45,6 +45,13 @@ final class WorkoutSessionController: NSObject, WorkoutControlling {
     /// is its own and not the workout's total.
     private var distanceAtRunStart: Double = 0
     private var isInRunActivity = false
+    /// Set from `start(indoor:)`/`recover(indoor:)`'s parameter, so
+    /// `beginActivity(_:)` — which builds its own configuration from scratch
+    /// and inherits nothing from the session's — has something to read.
+    /// Without it every activity segment defaulted to `.unknown`, silently,
+    /// while the session-level configuration correctly said `.outdoor` or
+    /// `.indoor`.
+    private var isIndoor = false
 
     private let heartRateType = HKQuantityType(.heartRate)
     private let distanceType = HKQuantityType(.distanceWalkingRunning)
@@ -64,6 +71,7 @@ final class WorkoutSessionController: NSObject, WorkoutControlling {
     }
 
     func start(indoor: Bool) async {
+        isIndoor = indoor
         guard HKHealthStore.isHealthDataAvailable() else { return }
         let configuration = HKWorkoutConfiguration()
         configuration.activityType = .crossTraining
@@ -101,6 +109,7 @@ final class WorkoutSessionController: NSObject, WorkoutControlling {
     /// remainder of the workout. A second `HKWorkout` in Fitness is a much
     /// smaller loss than an hour of unrecorded heart rate.
     func recover(indoor: Bool) async -> Bool {
+        isIndoor = indoor
         guard HKHealthStore.isHealthDataAvailable() else { return false }
         do {
             guard let session = try await healthStore.recoverActiveWorkoutSession() else {
@@ -153,6 +162,15 @@ final class WorkoutSessionController: NSObject, WorkoutControlling {
         session.endCurrentActivity(on: .now)
         let configuration = HKWorkoutConfiguration()
         configuration.activityType = type
+        // Built fresh here and inherits nothing from the session-level
+        // configuration in `start(indoor:)`/`recover(indoor:)` — without this,
+        // `locationType` silently defaulted to `.unknown` on every activity
+        // segment, runs included, while the session itself correctly reported
+        // `.outdoor`/`.indoor`. One workout, one consistent answer: every
+        // segment this method creates gets it, not only the runs, so the
+        // rounds segment never claims a location type its own session
+        // disagrees with.
+        configuration.locationType = isIndoor ? .indoor : .outdoor
         session.beginNewActivity(configuration: configuration, date: .now, metadata: nil)
     }
 

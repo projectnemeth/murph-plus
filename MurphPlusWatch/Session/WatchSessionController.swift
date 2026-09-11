@@ -28,6 +28,11 @@ final class WatchSessionController {
     /// the phone-side test bundle constructs this controller with a fake, and
     /// a session must run identically with no transport at all.
     private let transport: (any SessionTransport)?
+    /// Injected and optional for the same reasons `transport` is: the phone-
+    /// side test bundle supplies a fake, and a session must run identically
+    /// with none at all — an indoor workout, or a build where the receiver was
+    /// never wired up.
+    private let location: (any LocationProviding)?
     /// Starts at 0 and is pre-incremented, so the first checkpoint sent is 1.
     /// This is load-bearing: `SessionMerge.shouldApply` is strictly-greater
     /// against a stored 0, so a checkpoint numbered 0 would be silently
@@ -42,12 +47,14 @@ final class WatchSessionController {
         workout: any WorkoutControlling,
         journalDirectory: URL,
         healthKitStartTimeout: TimeInterval = 10,
-        transport: (any SessionTransport)? = nil
+        transport: (any SessionTransport)? = nil,
+        location: (any LocationProviding)? = nil
     ) {
         self.workout = workout
         self.journalDirectory = journalDirectory
         self.healthKitStartTimeout = healthKitStartTimeout
         self.transport = transport
+        self.location = location
     }
 
     #if os(watchOS)
@@ -64,13 +71,15 @@ final class WatchSessionController {
         self.init(
             workout: WorkoutSessionController(),
             journalDirectory: Self.defaultJournalDirectory,
-            transport: sync
+            transport: sync,
+            location: WatchLocationController()
         )
     }
     #endif
 
     var heartRate: Int? { workout.currentHeartRate }
     var runDistanceMeters: Double? { workout.currentRunDistanceMeters }
+    var gpsFixState: GPSFixState { location?.fixState ?? .off }
     var isPaused: Bool { state.isPaused }
     var isFinished: Bool { state.isTerminal }
     var canUndo: Bool { state.undoableRoundNumber != nil }
@@ -89,6 +98,7 @@ final class WatchSessionController {
 
     func requestAuthorization() async {
         await workout.requestAuthorization()
+        await location?.requestAuthorization()
     }
 
     /// Whether an unfinished journal is waiting on disk.
@@ -159,6 +169,7 @@ final class WatchSessionController {
             workout.pause()
         }
 
+        reconcileLocation()
         return true
     }
 
@@ -183,6 +194,7 @@ final class WatchSessionController {
             vestWeightLbs: vestWeightLbs, indoor: indoor, now: .now
         ))
         workout.beginRunActivity(resetDistanceBaseline: true)
+        reconcileLocation()
     }
 
     /// Runs `work`, giving up the wait after `seconds`.
@@ -265,6 +277,36 @@ final class WatchSessionController {
         }
     }
 
+    // MARK: - Location
+
+    /// Brings the receiver in line with where the session now is.
+    ///
+    /// Safe to call after any transition, and called after every one, because
+    /// `LocationProviding` is idempotent by contract. That is what keeps the
+    /// decision a pure function in `LocationPolicy` instead of a second state
+    /// machine living in here.
+    ///
+    /// Deliberately NOT called from `pause()`/`resume()`: the policy does not
+    /// consider pause, and a paused run keeps its receiver.
+    private func reconcileLocation() {
+        guard let location else { return }
+        if LocationPolicy.shouldWarm(for: state) {
+            location.startUpdating()
+        } else {
+            location.stopUpdating()
+        }
+    }
+
+    /// The setup screen's warm-up, before any session exists.
+    ///
+    /// Outside `LocationPolicy` on purpose: the policy answers "where is the
+    /// session", and here there is not one yet — `state.phase` is
+    /// `.notStarted`, for which the policy correctly says off. Warming early
+    /// is what makes the start gate almost never visible.
+    func warmLocationForSetup(_ on: Bool) {
+        on ? location?.startUpdating() : location?.stopUpdating()
+    }
+
     // MARK: - Transitions
 
     /// The slot-2 primary action: end the current run, or log a round.
@@ -289,6 +331,7 @@ final class WatchSessionController {
         case .notStarted, .completed:
             break
         }
+        reconcileLocation()
     }
 
     func pause() {
@@ -308,6 +351,7 @@ final class WatchSessionController {
         if wasRun2, state.phase == .rounds {
             workout.beginRoundsActivity()
         }
+        reconcileLocation()
     }
 
     /// Ruling 2: closes an open pause before abandoning, through the normal
@@ -333,6 +377,7 @@ final class WatchSessionController {
         }
 
         Task { await workout.finish() }
+        reconcileLocation()
     }
 
     /// Abandons the unfinished journal offered by the launch prompt, without
@@ -524,6 +569,7 @@ final class WatchSessionController {
         journal = nil
         state = SessionState()
         journalWriteFailed = false
+        reconcileLocation()
     }
 
     // MARK: - Applying

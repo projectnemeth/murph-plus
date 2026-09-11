@@ -83,6 +83,23 @@ targets:
         # freezes. This is a plist key only — no portal capability required.
         WKBackgroundModes:
           - workout-processing
+        # A *different* key doing a *different* job, and both are required.
+        # `WKBackgroundModes` has no `location` value at all — its full set is
+        # workout-processing, self-care, mindfulness, physical-therapy, alarm,
+        # underwater-depth — and `workout-processing` covers only the workout
+        # session. Location on watchOS goes through `UIBackgroundModes`, which
+        # is available here (watchOS 4.0+).
+        #
+        # This is not optional hardening: setting
+        # `CLLocationManager.allowsBackgroundLocationUpdates = true` while this
+        # key is missing is documented as "a fatal error that terminates the
+        # app" — NSInternalInconsistencyException, "Invalid parameter not
+        # satisfying: !stayUp || CLClientIsBackgroundable(...)". And leaving
+        # that property false is not a safe middle: updates then "may or may
+        # not continue in the background", which is the silent undercount this
+        # whole feature exists to remove.
+        UIBackgroundModes:
+          - location
         UIAppFonts:
           - ArchivoBlack-Regular.ttf
           - DMSans-Variable.ttf

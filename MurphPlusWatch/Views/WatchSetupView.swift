@@ -12,6 +12,7 @@ import WatchKit
 struct WatchSetupView: View {
     @Bindable var controller: WatchSessionController
     var sync: WatchSyncCoordinator
+    @Environment(\.scenePhase) private var scenePhase
 
     /// Prefers what the phone has synced down, falling back to the starters.
     /// The fallback matters on a Watch that has never connected: the user can
@@ -38,10 +39,25 @@ struct WatchSetupView: View {
 
     private var acknowledgementHorizon: Date? { sync.context?.acknowledgementHorizon }
 
+    /// "No workout owns the receiver right now" — the guard for the
+    /// scene-phase handler below.
+    ///
+    /// `.notStarted` is the phase this view is even on screen for before
+    /// Start is tapped; `isFinished` is the completed/abandoned phase after
+    /// one ends. Every other phase (`.run1`, `.run2`, `.rounds`) is a live
+    /// session, and none of them satisfy this — which is what keeps the
+    /// scene-phase handler from ever touching the receiver mid-workout, even
+    /// though this view is still technically part of the hierarchy while
+    /// `WatchLiveView` is pushed on top of it.
+    private var noLiveSession: Bool {
+        controller.state.phase == .notStarted || controller.isFinished
+    }
+
     @State private var selected: TemplateSpec?
     @AppStorage("watchVestOn") private var vestOn = false
     @AppStorage("watchVestWeight") private var vestWeight = 20
     @AppStorage("watchIndoor") private var indoor = false
+    @State private var gate = LocationFixGate()
     @State private var showLive = false
     @State private var showResumePrompt = false
     /// Owned here rather than by the countdown view so cancelling can tear the
@@ -80,15 +96,34 @@ struct WatchSetupView: View {
                     segmented(
                         left: "Outdoor", right: "Indoor",
                         leftSelected: !indoor,
-                        onLeft: { indoor = false }, onRight: { indoor = true }
+                        onLeft: { indoor = false; controller.warmLocationForSetup(true) },
+                        onRight: { indoor = true; controller.warmLocationForSetup(false) }
                     )
 
                     Button("Start") {
                         guard let spec = effectiveSelection else { return }
+                        // Repeats the `.task` warm-up rather than trusting it:
+                        // the receiver is started only from `.task`, and
+                        // whether SwiftUI re-runs `.task` when this view
+                        // reappears after a `NavigationStack` pop (session 2
+                        // of the same launch) is not something this test
+                        // bundle can pin down. The same gap swallows the
+                        // deny-then-grant-in-Settings path, since
+                        // `reflectAuthorization` clears `.denied` to `.off`
+                        // without restarting updates. One idempotent call here
+                        // makes the warm state deterministic regardless — a
+                        // future reader should not delete this as a duplicate
+                        // of the `.task` one.
+                        controller.warmLocationForSetup(!indoor)
                         // Everything that creates state lives inside the
                         // closure: a cancelled count must leave no journal, no
                         // HealthKit session and no navigation behind.
                         countdown.start {
+                            // Returns at once unless GPS is still acquiring,
+                            // which after the warm-up above is the rare case.
+                            // Bounded and skippable: no sensor blocks a
+                            // workout.
+                            await gate.wait { controller.gpsFixState }
                             await controller.startSession(
                                 template: spec, vestOn: vestOn,
                                 vestWeightLbs: vestOn ? vestWeight : nil, indoor: indoor
@@ -113,10 +148,30 @@ struct WatchSetupView: View {
         .overlay {
             if let value = countdown.remaining {
                 WatchCountdownView(value: value) { countdown.cancel() }
+            } else if gate.isWaiting {
+                WatchAcquiringGPSView { gate.skip() }
             }
         }
         .sheet(isPresented: $showResumePrompt) {
             resumePrompt
+        }
+        .onDisappear {
+            // Pushing WatchLiveView fires this too, and there the session owns
+            // the receiver from `startSession` onward — stopping it here would
+            // kill GPS in the first seconds of run 1. Only stop when we are
+            // genuinely leaving setup without a workout.
+            if !showLive { controller.warmLocationForSetup(false) }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            // `.onDisappear` fires when this view leaves the hierarchy, not
+            // when the app itself backgrounds — and with
+            // `allowsBackgroundLocationUpdates = true`, dropping the wrist
+            // with Outdoor selected is exactly what keeps this app alive in
+            // the background with a running receiver and no workout to
+            // justify it. `noLiveSession` is why this can never fight
+            // `reconcileLocation()` for control of the receiver during a run.
+            guard noLiveSession else { return }
+            controller.warmLocationForSetup(newPhase == .active && !indoor)
         }
         .task {
             // Set here, not at construction: `StartCountdown` lives in
@@ -124,6 +179,10 @@ struct WatchSetupView: View {
             // bundle can reach it. The haptic is the watch's business.
             countdown.onTick = { _ in WKInterfaceDevice.current().play(.click) }
             await controller.requestAuthorization()
+            // Warm from the moment the screen appears, so the receiver has
+            // been running for tens of seconds by the time Start is tapped.
+            // This is what makes the gate below almost never visible.
+            controller.warmLocationForSetup(!indoor)
             // Reconcile *first*, then ask what is resumable.
             //
             // Reconciliation can delete the very journal the prompt would
