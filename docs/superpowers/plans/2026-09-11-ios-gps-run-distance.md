@@ -22,7 +22,7 @@
 
   ```bash
   xcodebuild test -project MurphPlus.xcodeproj -scheme MurphPlus \
-    -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+    -destination 'platform=iOS Simulator,name=iPhone 17' \
     -only-testing:MurphPlusTests/SUITE 2>&1 | tail -25
   ```
 
@@ -230,7 +230,7 @@ final class RunDistanceAccumulatorTests: XCTestCase {
 ```bash
 cd /Users/nemeth/Documents/Claude/Projects/murph-plus && xcodegen generate && \
 xcodebuild test -project MurphPlus.xcodeproj -scheme MurphPlus \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
   -only-testing:MurphPlusTests/RunDistanceAccumulatorTests 2>&1 | tail -25
 ```
 
@@ -357,7 +357,7 @@ struct RunDistanceAccumulator {
 ```bash
 cd /Users/nemeth/Documents/Claude/Projects/murph-plus && xcodegen generate && \
 xcodebuild test -project MurphPlus.xcodeproj -scheme MurphPlus \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
   -only-testing:MurphPlusTests/RunDistanceAccumulatorTests 2>&1 | tail -25
 ```
 
@@ -486,7 +486,7 @@ final class FakeLocationController: LocationProviding, RunDistanceMeasuring {
 ```bash
 cd /Users/nemeth/Documents/Claude/Projects/murph-plus && xcodegen generate && \
 xcodebuild test -project MurphPlus.xcodeproj -scheme MurphPlus \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
   -only-testing:MurphPlusTests/WatchSessionControllerTests 2>&1 | tail -25
 ```
 
@@ -716,7 +716,7 @@ final class SessionEngineLocationTests: XCTestCase {
 ```bash
 cd /Users/nemeth/Documents/Claude/Projects/murph-plus && xcodegen generate && \
 xcodebuild test -project MurphPlus.xcodeproj -scheme MurphPlus \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
   -only-testing:MurphPlusTests/SessionEngineLocationTests 2>&1 | tail -25
 ```
 
@@ -853,7 +853,7 @@ Finally, extend `perform` (currently lines 95-119). Add the reconcile before the
 ```bash
 cd /Users/nemeth/Documents/Claude/Projects/murph-plus && xcodegen generate && \
 xcodebuild test -project MurphPlus.xcodeproj -scheme MurphPlus \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
   -only-testing:MurphPlusTests/SessionEngineLocationTests 2>&1 | tail -25
 ```
 
@@ -864,7 +864,7 @@ Expected: PASS, 11 tests.
 ```bash
 cd /Users/nemeth/Documents/Claude/Projects/murph-plus && \
 xcodebuild test -project MurphPlus.xcodeproj -scheme MurphPlus \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
   -only-testing:MurphPlusTests/SessionEngineTests \
   -only-testing:MurphPlusTests/LocationPolicyTests 2>&1 | tail -25
 ```
@@ -1123,7 +1123,7 @@ extension PhoneLocationController: CLLocationManagerDelegate {
 ```bash
 cd /Users/nemeth/Documents/Claude/Projects/murph-plus && xcodegen generate && \
 xcodebuild build -project MurphPlus.xcodeproj -scheme MurphPlus \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
   -derivedDataPath /tmp/murph-dd 2>&1 | tail -5 && \
 plutil -p /tmp/murph-dd/Build/Products/Debug-iphonesimulator/MurphPlus.app/Info.plist \
   | grep -A3 "UIBackgroundModes\|NSLocationWhenInUse"
@@ -1136,7 +1136,7 @@ Expected: build succeeds; output shows `UIBackgroundModes => [ 0 => "location" ]
 ```bash
 cd /Users/nemeth/Documents/Claude/Projects/murph-plus && \
 xcodebuild test -project MurphPlus.xcodeproj -scheme MurphPlus \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' 2>&1 | tail -25
+  -destination 'platform=iOS Simulator,name=iPhone 17' 2>&1 | tail -25
 ```
 
 Expected: PASS.
@@ -1302,7 +1302,7 @@ And the resume path (line 42) — this is where `LocationPolicy`'s purity pays o
 ```bash
 cd /Users/nemeth/Documents/Claude/Projects/murph-plus && xcodegen generate && \
 xcodebuild test -project MurphPlus.xcodeproj -scheme MurphPlus \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' 2>&1 | tail -25
+  -destination 'platform=iOS Simulator,name=iPhone 17' 2>&1 | tail -25
 ```
 
 Expected: PASS. `SessionEngineTests` still calls `startNew` without `indoor:` or `location:` and must still compile — both are defaulted.
@@ -1431,7 +1431,7 @@ And the overlay itself, beside `locationSection`:
 ```bash
 cd /Users/nemeth/Documents/Claude/Projects/murph-plus && xcodegen generate && \
 xcodebuild test -project MurphPlus.xcodeproj -scheme MurphPlus \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
   -only-testing:MurphPlusTests/LocationFixGateTests 2>&1 | tail -25
 ```
 
@@ -1580,7 +1580,7 @@ In `MurphPlus/Views/RootTabView.swift`, update the `fullScreenCover` content (li
 ```bash
 cd /Users/nemeth/Documents/Claude/Projects/murph-plus && xcodegen generate && \
 xcodebuild test -project MurphPlus.xcodeproj -scheme MurphPlus \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' 2>&1 | tail -25
+  -destination 'platform=iOS Simulator,name=iPhone 17' 2>&1 | tail -25
 ```
 
 Expected: PASS, every suite.
