@@ -28,9 +28,22 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: "Murph Plus"
         INFOPLIST_KEY_UIUserInterfaceStyle: Dark
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Murph+ uses location during the two runs to measure distance and pace. Choose Indoor at setup to skip this."
     info:
       path: MurphPlus/Info.plist
       properties:
+        # Setting `CLLocationManager.allowsBackgroundLocationUpdates = true`
+        # while this key is missing is documented as "a fatal error that
+        # terminates the app" - NSInternalInconsistencyException, "Invalid
+        # parameter not satisfying: !stayUp || CLClientIsBackgroundable(...)".
+        # It ships in the same commit as that property for exactly that reason.
+        #
+        # Leaving the property false is not a safe middle: updates then "may or
+        # may not continue in the background", which is the silent undercount
+        # this feature exists to remove. A pocketed phone with a locked screen
+        # is the normal case for a run.
+        UIBackgroundModes:
+          - location
         UIAppFonts:
           - ArchivoBlack-Regular.ttf
           - DMSans-Variable.ttf

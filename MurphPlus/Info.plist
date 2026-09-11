@@ -24,5 +24,9 @@
 		<string>DMSans-Variable.ttf</string>
 		<string>MartianMono-Variable.ttf</string>
 	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 </dict>
 </plist>
