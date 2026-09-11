@@ -86,10 +86,13 @@ final class FakeLocationController: LocationProviding, RunDistanceMeasuring {
     func startUpdating() { calls.append(.start) }
     func stopUpdating() { calls.append(.stop) }
 
-    func beginRun() {
-        calls.append(.beginRun)
-        runDistanceMeters = 0
-    }
+    // Recording only. `beginRun` deliberately does NOT zero
+    // `runDistanceMeters`: a double that mimics the real controller's reset
+    // would let a later test assert `runDistanceMeters == 0` and pass because
+    // the FAKE reset itself, not because the code under test asked it to.
+    // `calls` is the only evidence of what was invoked; the distance is
+    // whatever a test explicitly arranges.
+    func beginRun() { calls.append(.beginRun) }
     func resumeRun() { calls.append(.resumeRun) }
     func stopMeasuring() { calls.append(.stopMeasuring) }
 }
