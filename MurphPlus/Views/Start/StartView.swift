@@ -10,8 +10,10 @@ struct StartView: View {
     @State private var showTemplateEditor = false
     @State private var showDeleteTemplateConfirm = false
     @State private var showMirror = false
+    @State private var indoor = false
 
-    let onBegin: (WorkoutTemplate, Bool, Int?) -> Void
+    let location: PhoneLocationController
+    let onBegin: (SessionSetup) -> Void
 
     @Environment(PhoneSyncCoordinator.self) private var sync
     @Environment(\.modelContext) private var context
@@ -25,6 +27,7 @@ struct StartView: View {
 
                         VStack(alignment: .leading, spacing: MurphSpacing.gapSection) {
                             workoutSection
+                            locationSection
                             vestSection
 
                             // `isStale` is time-derived, so `@Observable` alone
@@ -66,7 +69,10 @@ struct StartView: View {
                                     ) {
                                         guard let selectedTemplate else { return }
                                         let weight = vestOn ? Int(vestWeightText) : nil
-                                        onBegin(selectedTemplate, vestOn, weight)
+                                        onBegin(SessionSetup(
+                                            template: selectedTemplate, vestOn: vestOn,
+                                            vestWeightLbs: weight, indoor: indoor
+                                        ))
                                     }
                                     .disabled(selectedTemplate == nil)
                                 }
@@ -83,6 +89,12 @@ struct StartView: View {
                         selectedTemplate = templates.first
                     }
                 }
+                .task {
+                    await location.requestAuthorization()
+                    reconcileWarmUp()
+                }
+                .onChange(of: indoor) { _, _ in reconcileWarmUp() }
+                .onDisappear { location.stopUpdating() }
                 .sheet(isPresented: $showTemplateEditor) {
                     TemplateEditorView()
                 }
@@ -255,6 +267,26 @@ struct StartView: View {
             }
         }
     }
+
+    /// The receiver warms from the moment this screen appears, which is what
+    /// makes the start gate almost never visible: by the time a template is
+    /// chosen and the vest is set, a fix has usually landed.
+    private var locationSection: some View {
+        VStack(alignment: .leading, spacing: MurphSpacing.gapStack) {
+            MurphSectionHeader("Location")
+            MurphToggle(
+                label: "Indoor",
+                description: "Treadmill or track. Skips GPS, so the run distance isn\u{2019}t measured.",
+                isOn: $indoor
+            )
+        }
+    }
+
+    /// Asserted unconditionally rather than tracked, because `startUpdating`
+    /// and `stopUpdating` are idempotent by contract.
+    private func reconcileWarmUp() {
+        if indoor { location.stopUpdating() } else { location.startUpdating() }
+    }
 }
 
 #Preview {
@@ -262,7 +294,7 @@ struct StartView: View {
         for: WorkoutTemplate.self, MurphSession.self, RunSplit.self, RoundLog.self,
         configurations: ModelConfiguration(isStoredInMemoryOnly: true)
     )
-    return StartView { _, _, _ in }
+    return StartView(location: PhoneLocationController()) { _ in }
         .modelContainer(container)
         .environment(PhoneSyncCoordinator(container: container))
 }

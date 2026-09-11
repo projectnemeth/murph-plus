@@ -11,11 +11,18 @@ struct RootTabView: View {
     @Environment(\.modelContext) private var context
     @State private var liveEngine: SessionEngine?
     @State private var resumableSession: MurphSession?
+    /// One long-lived instance: the receiver warms on the setup screen and
+    /// must still be the same object once the session begins.
+    @State private var location = PhoneLocationController()
 
     var body: some View {
         TabView {
-            StartView { template, vestOn, vestWeight in
-                liveEngine = SessionEngine.startNew(template: template, vestOn: vestOn, vestWeightLbs: vestWeight, context: context)
+            StartView(location: location) { setup in
+                liveEngine = SessionEngine.startNew(
+                    template: setup.template, vestOn: setup.vestOn,
+                    vestWeightLbs: setup.vestWeightLbs, indoor: setup.indoor,
+                    context: context, location: location
+                )
             }
             .tabItem { Label("Start", systemImage: "play.fill") }
 
@@ -39,7 +46,7 @@ struct RootTabView: View {
             ResumeSessionPrompt(
                 session: session,
                 onResume: {
-                    liveEngine = SessionEngine(session: session, context: context)
+                    liveEngine = SessionEngine(session: session, context: context, location: location)
                     resumableSession = nil
                 },
                 onAbandon: {
