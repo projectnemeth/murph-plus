@@ -28,12 +28,17 @@ final class SessionEngine {
     /// Cleared by the next `beginRun()`.
     private var runDistanceUntrustworthy = false
 
+    /// Mirrors the measurement window so the reconcile can edge-trigger on it.
+    /// `stopMeasuring`/`resumeRun` are idempotent in effect, but `beginRun`
+    /// zeroes the total, so it must fire exactly once per run.
+    private var isMeasuring = false
+
     init(session: MurphSession, context: ModelContext, location: SessionLocation? = nil) {
         self.session = session
         self.context = context
         self.location = location
         self.state = SessionEngine.rebuildState(from: session)
-        reconcileLocation(previousPhase: nil)
+        reconcileLocation()
         // Set AFTER the reconcile above, because that reconcile may call
         // `beginRun()` for a run already in progress - and `beginRun` is
         // exactly what clears this flag.
@@ -136,7 +141,7 @@ final class SessionEngine {
         if case .abandoned = event, session.startedAt == nil {
             // Reconcile before returning, or a discarded session leaves the
             // receiver powered until the app dies.
-            reconcileLocation(previousPhase: before.phase)
+            reconcileLocation()
             context.delete(session)
             save()
             return
@@ -144,15 +149,6 @@ final class SessionEngine {
 
         applyToModel(event, before: before)
         save()
-
-        // Reconcile phase-driven receiver/measurement state first, so the
-        // pause/resume-specific calls below - which are not phase changes and
-        // so are invisible to `reconcileLocation` - are always the last calls
-        // recorded for those two events. `reconcileLocation` asserts the
-        // receiver state unconditionally on every call (see its doc comment),
-        // so running it after these would silently re-issue `startUpdating()`
-        // and clobber the very call this switch exists to make.
-        reconcileLocation(previousPhase: before.phase)
 
         // Pause and resume are not phase changes, so the window has to be
         // moved explicitly. The receiver is deliberately untouched: pauses are
@@ -165,6 +161,8 @@ final class SessionEngine {
         default:
             break
         }
+
+        reconcileLocation()
     }
 
     private func applyToModel(_ event: SessionEvent, before: SessionState) {
@@ -299,6 +297,18 @@ final class SessionEngine {
         phase == .run1 || phase == .run2
     }
 
+    /// Whether a run's distance should be accumulating right now.
+    ///
+    /// Deliberately not a phase-edge comparison. `SessionState.apply` preserves
+    /// `phase` on `.abandoned`, so an abandoned run reads `.run1` forever and an
+    /// edge trigger would never close the window; and `indoor` is invisible to
+    /// phase entirely. Putting all three conditions in one predicate is what
+    /// keeps those two cases from being separate special cases.
+    private static func shouldMeasure(_ state: SessionState) -> Bool {
+        guard !state.indoor, !state.isTerminal else { return false }
+        return isRun(state.phase)
+    }
+
     /// Asserts the desired receiver state unconditionally rather than tracking
     /// what was already asked — `startUpdating`/`stopUpdating` are idempotent
     /// by contract, which is what lets `LocationPolicy` stay a pure function
@@ -307,7 +317,7 @@ final class SessionEngine {
     /// Mirrors `WatchSessionController`: the transition points are ones this
     /// type already owns, so there are no new events and no state-machine
     /// change.
-    private func reconcileLocation(previousPhase: SessionPhase?) {
+    private func reconcileLocation() {
         guard let location else { return }
 
         if LocationPolicy.shouldWarm(for: state) {
@@ -316,16 +326,18 @@ final class SessionEngine {
             location.stopUpdating()
         }
 
-        // The measurement window follows PHASE, not receiver power. The two
-        // overlap but are not the same interval: the pre-warm at
-        // rounds-remaining <= 1 powers the receiver while measuring stays off.
-        let wasRun = previousPhase.map(SessionEngine.isRun) ?? false
-        let isRun = SessionEngine.isRun(state.phase)
-        if isRun && !wasRun {
+        // The measurement window follows a pure predicate, not receiver power
+        // or a bare phase edge. The two overlap but are not the same interval:
+        // the pre-warm at rounds-remaining <= 1 powers the receiver while
+        // measuring stays off.
+        let wantMeasuring = SessionEngine.shouldMeasure(state)
+        if wantMeasuring && !isMeasuring {
             location.beginRun()
             runDistanceUntrustworthy = false
-        } else if wasRun && !isRun {
+            isMeasuring = true
+        } else if !wantMeasuring && isMeasuring {
             location.stopMeasuring()
+            isMeasuring = false
         }
     }
 

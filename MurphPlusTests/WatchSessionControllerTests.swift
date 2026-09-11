@@ -82,6 +82,13 @@ final class FakeLocationController: LocationProviding, RunDistanceMeasuring {
         }
     }
 
+    /// Only the measurement-window calls, so an assertion about measuring is
+    /// not perturbed by the idempotent receiver calls `reconcileLocation`
+    /// issues after every event. The counterpart of `transitions`.
+    var measurements: [Call] {
+        calls.filter { $0 == .beginRun || $0 == .resumeRun || $0 == .stopMeasuring }
+    }
+
     func requestAuthorization() async { calls.append(.requestAuthorization) }
     func startUpdating() { calls.append(.start) }
     func stopUpdating() { calls.append(.stop) }

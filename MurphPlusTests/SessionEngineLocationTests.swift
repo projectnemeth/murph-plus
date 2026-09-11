@@ -47,7 +47,7 @@ final class SessionEngineLocationTests: XCTestCase {
         engine.start()
         engine.pause()
 
-        XCTAssertEqual(location.calls.last, .stopMeasuring)
+        XCTAssertEqual(location.measurements.last, .stopMeasuring)
         // Pause is invisible to LocationPolicy on purpose: reacquiring a fix
         // on resume costs more than a short pause saves.
         XCTAssertEqual(location.transitions.last, .start)
@@ -59,7 +59,7 @@ final class SessionEngineLocationTests: XCTestCase {
         engine.pause()
         engine.resume()
 
-        XCTAssertEqual(location.calls.last, .resumeRun)
+        XCTAssertEqual(location.measurements.last, .resumeRun)
     }
 
     func test_finishRun1_capturesDistanceIntoTheSplitAndStopsMeasuring() {
@@ -125,6 +125,16 @@ final class SessionEngineLocationTests: XCTestCase {
         XCTAssertEqual(location.transitions.last, .stop)
     }
 
+    func test_abandonMidRun_closesTheMeasurementWindow() {
+        let engine = makeEngine(rounds: 3)
+        engine.start()
+        engine.abandon()
+
+        // `.abandoned` preserves phase, so the run still reads `.run1` here.
+        // Only a terminal-aware rule closes the window.
+        XCTAssertEqual(location.measurements.last, .stopMeasuring)
+    }
+
     func test_indoorSession_neverStartsTheReceiver() {
         let engine = makeEngine(rounds: 3, indoor: true)
         engine.start()
@@ -132,6 +142,16 @@ final class SessionEngineLocationTests: XCTestCase {
         engine.completeRound()
 
         XCTAssertFalse(location.calls.contains(.start))
+    }
+
+    func test_indoorSession_neverOpensAMeasurementWindow() {
+        let engine = makeEngine(rounds: 3, indoor: true)
+        engine.start()
+        engine.finishRun()
+        engine.completeRound()
+
+        XCTAssertFalse(location.calls.contains(.beginRun),
+                       "an indoor run opened a measurement window — it will persist 0.00 mi instead of nil")
     }
 
     /// A run already in flight at construction began before this engine
