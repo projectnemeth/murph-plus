@@ -286,19 +286,11 @@ final class WatchSessionController {
     /// decision a pure function in `LocationPolicy` instead of a second state
     /// machine living in here.
     ///
-    /// `isTerminal` is checked ahead of the policy rather than folded into it:
-    /// `abandon()` sets only `status`, deliberately leaving `phase` wherever
-    /// the attempt stopped (`SessionStateMachine.guardActive` checks `status`
-    /// for the same reason), so the history screens can still show how far it
-    /// got. `LocationPolicy` reads `phase`, so an abandoned mid-run session
-    /// would otherwise still read as `.run1` and the receiver would never be
-    /// told to stop.
-    ///
     /// Deliberately NOT called from `pause()`/`resume()`: the policy does not
     /// consider pause, and a paused run keeps its receiver.
     private func reconcileLocation() {
         guard let location else { return }
-        if !state.isTerminal, LocationPolicy.shouldWarm(for: state) {
+        if LocationPolicy.shouldWarm(for: state) {
             location.startUpdating()
         } else {
             location.stopUpdating()

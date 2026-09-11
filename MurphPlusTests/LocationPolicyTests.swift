@@ -78,4 +78,18 @@ final class LocationPolicyTests: XCTestCase {
         s.phase = .rounds
         XCTAssertFalse(LocationPolicy.shouldWarm(for: s))
     }
+
+    /// An abandoned session keeps its phase — `SessionState.apply` leaves it
+    /// deliberately, as the record of how far the attempt got — so a rule that
+    /// read only `phase` would leave the receiver running forever after an
+    /// abandon mid-run.
+    func test_abandonedSessionsNeverWarm() {
+        var s = state(phase: .run1)
+        s.status = .abandoned
+        XCTAssertFalse(LocationPolicy.shouldWarm(for: s))
+
+        var midRounds = state(phase: .rounds, rounds: 20, completed: 19)
+        midRounds.status = .abandoned
+        XCTAssertFalse(LocationPolicy.shouldWarm(for: midRounds))
+    }
 }

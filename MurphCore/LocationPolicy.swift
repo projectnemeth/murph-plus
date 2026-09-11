@@ -16,6 +16,12 @@ enum LocationPolicy {
     /// running and cannot be gated the way run 1 is.
     static func shouldWarm(for state: SessionState) -> Bool {
         guard !state.indoor else { return false }
+        // An abandoned session keeps its phase: `SessionState.apply` leaves it
+        // deliberately, because phase is the record of how far the attempt got
+        // and the history screens show it. So a Murph abandoned mid-run still
+        // reads `.run1` forever, and a phase-only rule would leave the receiver
+        // running until the app died.
+        guard !state.isTerminal else { return false }
 
         switch state.phase {
         case .run1, .run2:
