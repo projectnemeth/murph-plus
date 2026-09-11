@@ -71,8 +71,8 @@ final class WatchSessionController {
         self.init(
             workout: WorkoutSessionController(),
             journalDirectory: Self.defaultJournalDirectory,
-            transport: sync
-            // location: WatchLocationController()
+            transport: sync,
+            location: WatchLocationController()
         )
     }
     #endif

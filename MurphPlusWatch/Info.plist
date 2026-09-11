@@ -24,6 +24,10 @@
 		<string>DMSans-Variable.ttf</string>
 		<string>MartianMono-Variable.ttf</string>
 	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 	<key>WKBackgroundModes</key>
 	<array>
 		<string>workout-processing</string>
