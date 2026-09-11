@@ -10,6 +10,7 @@ import SwiftData
 /// taken during run 1, which would make round 1 silently absorb that pause.
 /// `SessionEngine` now persists `MurphSession.roundsStartedAt` from
 /// `state.roundsStartedAt`, and `RoundThroughputBuilder` prefers it.
+@MainActor
 final class RoundThroughputPauseTests: XCTestCase {
     var context: ModelContext!
 

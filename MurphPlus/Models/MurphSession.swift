@@ -51,12 +51,14 @@ final class MurphSession {
         date: Date = .now,
         template: WorkoutTemplate?,
         vestOn: Bool,
-        vestWeightLbs: Int? = nil
+        vestWeightLbs: Int? = nil,
+        indoor: Bool = false
     ) {
         self.date = date
         self.template = template
         self.vestOn = vestOn
         self.vestWeightLbs = vestOn ? (vestWeightLbs ?? 20) : nil
+        self.indoor = indoor
         self.statusRaw = SessionStatus.inProgress.rawValue
         self.phaseRaw = SessionPhase.notStarted.rawValue
         self.completedRounds = 0

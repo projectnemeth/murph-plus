@@ -10,23 +10,46 @@ import SwiftData
 /// state machine owns the rules; this type owns persistence. Its public API is
 /// unchanged from the pre-extraction version, and `SessionEngineTests` passes
 /// untouched — that is the proof the extraction preserved behavior.
+///
+/// `@MainActor` because `LocationProviding` and `RunDistanceMeasuring` are:
+/// every call into them needs main-actor context, and this class is
+/// `@Observable` and drives SwiftUI. Same reasoning as
+/// `WatchSessionController`.
+@MainActor
 @Observable
 final class SessionEngine {
     private(set) var session: MurphSession
     private(set) var state: SessionState
     private let context: ModelContext
+    private let location: SessionLocation?
 
-    init(session: MurphSession, context: ModelContext) {
+    /// A run already in flight when this engine was built began before the
+    /// engine existed, so whatever is measured from here is only part of it.
+    /// Cleared by the next `beginRun()`.
+    private var runDistanceUntrustworthy = false
+
+    init(session: MurphSession, context: ModelContext, location: SessionLocation? = nil) {
         self.session = session
         self.context = context
+        self.location = location
         self.state = SessionEngine.rebuildState(from: session)
+        reconcileLocation(previousPhase: nil)
+        // Set AFTER the reconcile above, because that reconcile may call
+        // `beginRun()` for a run already in progress - and `beginRun` is
+        // exactly what clears this flag.
+        runDistanceUntrustworthy = SessionEngine.isRun(state.phase)
     }
 
-    static func startNew(template: WorkoutTemplate, vestOn: Bool, vestWeightLbs: Int?, context: ModelContext) -> SessionEngine {
-        let session = MurphSession(template: template, vestOn: vestOn, vestWeightLbs: vestWeightLbs)
+    static func startNew(
+        template: WorkoutTemplate, vestOn: Bool, vestWeightLbs: Int?,
+        indoor: Bool = false, context: ModelContext, location: SessionLocation? = nil
+    ) -> SessionEngine {
+        let session = MurphSession(
+            template: template, vestOn: vestOn, vestWeightLbs: vestWeightLbs, indoor: indoor
+        )
         context.insert(session)
         try? context.save()
-        return SessionEngine(session: session, context: context)
+        return SessionEngine(session: session, context: context, location: location)
     }
 
     var isPaused: Bool { state.isPaused }
@@ -46,7 +69,10 @@ final class SessionEngine {
     }
 
     func finishRun() {
-        perform(SessionStateMachine.finishRun(state, at: .now, distanceMeters: nil))
+        // Read before the transition: `perform` closes the measurement window
+        // as part of reconciling, and the value is needed for the event.
+        let distance = runDistanceUntrustworthy ? nil : location?.runDistanceMeters
+        perform(SessionStateMachine.finishRun(state, at: .now, distanceMeters: distance))
     }
 
     func completeRound() {
@@ -108,6 +134,9 @@ final class SessionEngine {
         // touches `session` any further: once deleted, it must not be mutated
         // or saved again.
         if case .abandoned = event, session.startedAt == nil {
+            // Reconcile before returning, or a discarded session leaves the
+            // receiver powered until the app dies.
+            reconcileLocation(previousPhase: before.phase)
             context.delete(session)
             save()
             return
@@ -115,6 +144,27 @@ final class SessionEngine {
 
         applyToModel(event, before: before)
         save()
+
+        // Reconcile phase-driven receiver/measurement state first, so the
+        // pause/resume-specific calls below - which are not phase changes and
+        // so are invisible to `reconcileLocation` - are always the last calls
+        // recorded for those two events. `reconcileLocation` asserts the
+        // receiver state unconditionally on every call (see its doc comment),
+        // so running it after these would silently re-issue `startUpdating()`
+        // and clobber the very call this switch exists to make.
+        reconcileLocation(previousPhase: before.phase)
+
+        // Pause and resume are not phase changes, so the window has to be
+        // moved explicitly. The receiver is deliberately untouched: pauses are
+        // typically short, and reacquiring a fix costs more than one saves.
+        switch event {
+        case .paused:
+            location?.stopMeasuring()
+        case .resumed:
+            if SessionEngine.isRun(state.phase) { location?.resumeRun() }
+        default:
+            break
+        }
     }
 
     private func applyToModel(_ event: SessionEvent, before: SessionState) {
@@ -137,6 +187,7 @@ final class SessionEngine {
                     durationSeconds: split.durationSeconds,
                     session: session
                 )
+                model.distanceMeters = split.distanceMeters
                 context.insert(model)
                 session.runSplits.append(model)
             }
@@ -242,6 +293,40 @@ final class SessionEngine {
             ?? session.runSplits.first { $0.runIndex == 1 }
                 .map { $0.startTime.addingTimeInterval($0.durationSeconds) }
         return state
+    }
+
+    private static func isRun(_ phase: SessionPhase) -> Bool {
+        phase == .run1 || phase == .run2
+    }
+
+    /// Asserts the desired receiver state unconditionally rather than tracking
+    /// what was already asked — `startUpdating`/`stopUpdating` are idempotent
+    /// by contract, which is what lets `LocationPolicy` stay a pure function
+    /// rather than a second state machine.
+    ///
+    /// Mirrors `WatchSessionController`: the transition points are ones this
+    /// type already owns, so there are no new events and no state-machine
+    /// change.
+    private func reconcileLocation(previousPhase: SessionPhase?) {
+        guard let location else { return }
+
+        if LocationPolicy.shouldWarm(for: state) {
+            location.startUpdating()
+        } else {
+            location.stopUpdating()
+        }
+
+        // The measurement window follows PHASE, not receiver power. The two
+        // overlap but are not the same interval: the pre-warm at
+        // rounds-remaining <= 1 powers the receiver while measuring stays off.
+        let wasRun = previousPhase.map(SessionEngine.isRun) ?? false
+        let isRun = SessionEngine.isRun(state.phase)
+        if isRun && !wasRun {
+            location.beginRun()
+            runDistanceUntrustworthy = false
+        } else if wasRun && !isRun {
+            location.stopMeasuring()
+        }
     }
 
     private func save() {

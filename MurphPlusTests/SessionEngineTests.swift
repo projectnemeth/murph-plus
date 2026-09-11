@@ -3,6 +3,7 @@ import XCTest
 import SwiftData
 @testable import MurphPlus
 
+@MainActor
 final class SessionEngineTests: XCTestCase {
     var context: ModelContext!
 

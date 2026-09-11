@@ -23,6 +23,7 @@ import SwiftData
 /// `rebuildState(from:)` decodes them back. Each test here rebuilds a second
 /// `SessionEngine` over the same persisted `MurphSession` — exactly what a
 /// relaunch does — to prove both symptoms are gone.
+@MainActor
 final class SessionEnginePauseRelaunchTests: XCTestCase {
     var context: ModelContext!
 
