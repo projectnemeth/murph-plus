@@ -11,6 +11,10 @@ struct StartView: View {
     @State private var showDeleteTemplateConfirm = false
     @State private var showMirror = false
     @State private var indoor = false
+    /// Reused verbatim from the watch. The phone is its second caller and adds
+    /// nothing to it.
+    @State private var gate = LocationFixGate()
+    @State private var pendingSetup: SessionSetup?
 
     let location: PhoneLocationController
     /// Whether a session engine currently exists.
@@ -23,6 +27,15 @@ struct StartView: View {
     /// it. Stopping unconditionally there would kill the receiver for the rest
     /// of that run, with nothing to restart it until the next transition, by
     /// which point `finishRun` has already read the distance.
+    ///
+    /// Also guards against a second, narrower case: presenting the acquiring
+    /// overlay (`fullScreenCover`) over this screen can itself fire
+    /// `.onDisappear`. At gate time no engine exists yet, so this alone would
+    /// read `false` and let the guard fall through to `stopUpdating()` — which
+    /// would kill the very receiver the gate is polling and strand every
+    /// outdoor session at the 30-second timeout. Hence the second condition,
+    /// `!gate.isWaiting`, below: this screen must not stop the receiver while
+    /// anything is still waiting on it.
     let sessionIsLive: Bool
     let onBegin: (SessionSetup) -> Void
 
@@ -80,10 +93,23 @@ struct StartView: View {
                                     ) {
                                         guard let selectedTemplate else { return }
                                         let weight = vestOn ? Int(vestWeightText) : nil
-                                        onBegin(SessionSetup(
+                                        let setup = SessionSetup(
                                             template: selectedTemplate, vestOn: vestOn,
                                             vestWeightLbs: weight, indoor: indoor
-                                        ))
+                                        )
+                                        pendingSetup = setup
+                                        Task {
+                                            // Returns immediately for every
+                                            // state except `.acquiring`: Indoor
+                                            // is `.off`, a refusal is `.denied`
+                                            // and waiting for a fix that will
+                                            // never come is pure delay, and the
+                                            // ordinary case is already `.fixed`.
+                                            await gate.wait { location.fixState }
+                                            guard let staged = pendingSetup else { return }
+                                            pendingSetup = nil
+                                            onBegin(staged)
+                                        }
                                     }
                                     .disabled(selectedTemplate == nil)
                                 }
@@ -106,7 +132,7 @@ struct StartView: View {
                 }
                 .onChange(of: indoor) { _, _ in reconcileWarmUp() }
                 .onDisappear {
-                    guard !sessionIsLive else { return }
+                    guard !sessionIsLive, !gate.isWaiting else { return }
                     location.stopUpdating()
                 }
                 .sheet(isPresented: $showTemplateEditor) {
@@ -114,6 +140,12 @@ struct StartView: View {
                 }
                 .navigationDestination(isPresented: $showMirror) {
                     MirroredSessionView(mirror: sync.mirror)
+                }
+                .fullScreenCover(isPresented: Binding(
+                    get: { gate.isWaiting },
+                    set: { if !$0 { gate.skip() } }
+                )) {
+                    acquiringOverlay
                 }
 
                 if showDeleteTemplateConfirm, let template = selectedTemplate {
@@ -296,10 +328,51 @@ struct StartView: View {
         }
     }
 
+    /// A `fullScreenCover`, not a sheet, and dismissal is disabled: the same
+    /// reasoning already written at `RootTabView.swift:54-61`. A swipe here
+    /// would resolve the gate without a decision and leave a half-started
+    /// session behind it.
+    private var acquiringOverlay: some View {
+        VStack(spacing: MurphSpacing.space6) {
+            Spacer()
+            ProgressView()
+                .controlSize(.large)
+                .tint(MurphColor.hazard500)
+            VStack(spacing: MurphSpacing.space2) {
+                Text("Acquiring GPS")
+                    .murphType(.title())
+                    .foregroundStyle(MurphColor.textPrimary)
+                Text("Waiting for a usable fix so the run distance is measured.")
+                    .murphType(.bodySm)
+                    .foregroundStyle(MurphColor.textMuted)
+                    .multilineTextAlignment(.center)
+            }
+            Spacer()
+            // Available from the first frame. The standing contract is that no
+            // sensor may block the workout (`WorkoutControlling`), and the
+            // 30-second timeout is only the backstop for someone who is not
+            // looking at the screen.
+            MurphButton(variant: .secondary, size: .lg, full: true, title: "Start anyway") {
+                gate.skip()
+            }
+        }
+        .padding(MurphSpacing.gutterScreen)
+        .murphScreenBackground()
+        .interactiveDismissDisabled()
+    }
+
     /// Asserted unconditionally rather than tracked, because `startUpdating`
     /// and `stopUpdating` are idempotent by contract.
+    ///
+    /// Guarded on `!gate.isWaiting` too: presenting the acquiring overlay as a
+    /// `fullScreenCover` over this screen can itself trigger a reconcile, and
+    /// at gate time no session exists yet, so `sessionIsLive` alone would let
+    /// `indoor` (still false, most likely) call `stopUpdating()` on the very
+    /// receiver the gate is polling — stalling every outdoor start until the
+    /// 30-second timeout. See the note on `sessionIsLive` for the matching
+    /// case in `.onDisappear`.
     private func reconcileWarmUp() {
-        guard !sessionIsLive else { return }
+        guard !sessionIsLive, !gate.isWaiting else { return }
         if indoor { location.stopUpdating() } else { location.startUpdating() }
     }
 }
