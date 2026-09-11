@@ -351,6 +351,7 @@ final class WatchSessionController {
         if wasRun2, state.phase == .rounds {
             workout.beginRoundsActivity()
         }
+        reconcileLocation()
     }
 
     /// Ruling 2: closes an open pause before abandoning, through the normal

@@ -74,6 +74,14 @@ final class LocationFixGate {
             do {
                 try await sleep(.seconds(pollInterval))
             } catch {
+                // Swallowed deliberately: the caller (`StartCountdown`'s `go`,
+                // after the count has already completed uninterrupted) simply
+                // proceeds into `startSession` on any thrown `sleep`, cancellation
+                // included. There is no live path to a cancelled wait today —
+                // the acquiring overlay offers only "Start anyway", no Cancel —
+                // but if one is ever added here, note that it means a
+                // cancelled wait still starts the workout. Whoever adds that
+                // button should decide that on purpose rather than inherit it.
                 return
             }
             if skipped { return }
