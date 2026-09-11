@@ -54,21 +54,30 @@ final class FakeWorkoutController: WorkoutControlling {
 /// *sequence of calls* — warm for the run, stop for the rounds, warm again
 /// before run 2 — and only a recording double can assert on it.
 @MainActor
-final class FakeLocationController: LocationProviding {
+final class FakeLocationController: LocationProviding, RunDistanceMeasuring {
     enum Call: Equatable {
         case requestAuthorization
         case start
         case stop
+        case beginRun
+        case resumeRun
+        case stopMeasuring
     }
 
     private(set) var calls: [Call] = []
     var fixState: GPSFixState = .off
 
-    /// Only the transitions, with repeats collapsed. `startUpdating` is
-    /// idempotent by contract and is called after every event, so the raw
+    /// Settable so a test can stage the distance the engine should capture.
+    var runDistanceMeters: Double?
+
+    /// Only the receiver transitions, with repeats collapsed. `startUpdating`
+    /// is idempotent by contract and is called after every event, so the raw
     /// list is mostly noise; this is the shape a test actually cares about.
+    ///
+    /// Measurement calls are filtered out too: they are a separate concern on
+    /// a separate clock, asserted directly against `calls` by the phone tests.
     var transitions: [Call] {
-        calls.filter { $0 != .requestAuthorization }.reduce(into: []) { out, call in
+        calls.filter { $0 == .start || $0 == .stop }.reduce(into: []) { out, call in
             if out.last != call { out.append(call) }
         }
     }
@@ -76,6 +85,13 @@ final class FakeLocationController: LocationProviding {
     func requestAuthorization() async { calls.append(.requestAuthorization) }
     func startUpdating() { calls.append(.start) }
     func stopUpdating() { calls.append(.stop) }
+
+    func beginRun() {
+        calls.append(.beginRun)
+        runDistanceMeters = 0
+    }
+    func resumeRun() { calls.append(.resumeRun) }
+    func stopMeasuring() { calls.append(.stopMeasuring) }
 }
 
 @MainActor
