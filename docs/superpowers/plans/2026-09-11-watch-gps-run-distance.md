@@ -354,7 +354,10 @@ final class LocationFixGateTests: XCTestCase {
             polls += 1
             return .acquiring
         }
-        XCTAssertEqual(polls, 5)
+        // Six, not five: one read before deciding to wait at all, then one
+        // per poll. A gate that did not read first would suspend even on a
+        // fix it already had.
+        XCTAssertEqual(polls, 6)
         XCTAssertFalse(g.isWaiting)
     }
 
@@ -381,7 +384,7 @@ final class LocationFixGateTests: XCTestCase {
             polls += 1
             return .acquiring
         }
-        XCTAssertEqual(polls, 5)
+        XCTAssertEqual(polls, 6)   // the guard read, then five polls
     }
 
     func test_defaultTimeoutIsThirtySeconds() {
@@ -650,7 +653,7 @@ Now the tests, in a new `// MARK: - GPS lifecycle` section at the end of the cla
         let revived = WatchSessionController(
             workout: FakeWorkoutController(), journalDirectory: directory, location: fresh
         )
-        let resumed = await revived.resumeExistingSession()
+        let resumed = try await revived.resumeExistingSession()
 
         XCTAssertTrue(resumed)
         XCTAssertEqual(fresh.transitions, [.start])
@@ -666,7 +669,7 @@ Now the tests, in a new `// MARK: - GPS lifecycle` section at the end of the cla
         let revived = WatchSessionController(
             workout: FakeWorkoutController(), journalDirectory: directory, location: fresh
         )
-        let resumed = await revived.resumeExistingSession()
+        let resumed = try await revived.resumeExistingSession()
 
         XCTAssertTrue(resumed)
         XCTAssertFalse(fresh.calls.contains(.start))
@@ -685,7 +688,7 @@ Now the tests, in a new `// MARK: - GPS lifecycle` section at the end of the cla
         let revived = WatchSessionController(
             workout: FakeWorkoutController(), journalDirectory: directory, location: fresh
         )
-        let resumed = await revived.resumeExistingSession()
+        let resumed = try await revived.resumeExistingSession()
 
         XCTAssertTrue(resumed)
         XCTAssertEqual(fresh.transitions, [.start])
