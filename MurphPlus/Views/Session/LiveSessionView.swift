@@ -37,6 +37,7 @@ struct LiveSessionView: View {
     /// zero that is really "not measured yet" reads as a broken sensor.
     private var liveDistanceText: String {
         guard !session.indoor else { return "Indoor \u{00b7} distance not measured" }
+        guard engine.runDistanceIsTrustworthy else { return "Distance \u{2014}" }
         guard let meters = location.runDistanceMeters else { return "Distance \u{2014}" }
         guard let target = session.template?.runDistanceMiles else {
             return "Distance \(formatMiles(meters))"

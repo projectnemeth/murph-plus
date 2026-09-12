@@ -154,6 +154,19 @@ final class SessionEngineLocationTests: XCTestCase {
                        "an indoor run opened a measurement window — it will persist 0.00 mi instead of nil")
     }
 
+    func test_indoorSession_doesNotInheritThePreviousSessionsDistance() {
+        // The controller is one app-lifetime instance and never clears this,
+        // so a previous outdoor session's total is still sitting there.
+        location.runDistanceMeters = 1300
+
+        let engine = makeEngine(rounds: 3, indoor: true)
+        engine.start()
+        engine.finishRun()
+
+        XCTAssertNil(engine.session.runSplits.first?.distanceMeters,
+                     "an indoor run persisted a distance it never measured")
+    }
+
     /// A run already in flight at construction began before this engine
     /// existed, so its partial total is unrecoverable. An honest gap beats an
     /// undercount with no visible signal.

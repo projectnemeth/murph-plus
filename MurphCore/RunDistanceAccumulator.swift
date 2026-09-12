@@ -35,6 +35,14 @@ struct RunDistanceAccumulator {
     private(set) var totalMeters: Double = 0
     private var anchor: LocationSample?
 
+    /// Whether any sample has passed the quality filters yet.
+    ///
+    /// Distinguishes "measuring, nothing moved yet" (0 m, honest) from "nothing
+    /// usable has arrived at all" (no number, also honest). A caller that
+    /// reported 0 for the second case would be publishing a measurement it
+    /// never made — the exact failure this whole feature exists to remove.
+    var hasAcceptedSample: Bool { anchor != nil }
+
     /// A new run: clear the total and the anchor.
     mutating func reset() {
         totalMeters = 0

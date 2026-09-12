@@ -95,7 +95,10 @@ final class PhoneLocationController: NSObject, LocationProviding, RunDistanceMea
 
     func beginRun() {
         accumulator.reset()
-        runDistanceMeters = 0
+        // nil, not 0: nothing has been measured yet, and a 0 that really means
+        // "no usable sample has arrived" is a fabricated measurement. It
+        // becomes a number in `ingest`, once the accumulator accepts a sample.
+        runDistanceMeters = nil
         isMeasuring = true
     }
 
@@ -148,7 +151,8 @@ final class PhoneLocationController: NSObject, LocationProviding, RunDistanceMea
             }
 
             if isMeasuring {
-                runDistanceMeters = accumulator.add(sample, now: now)
+                let total = accumulator.add(sample, now: now)
+                if accumulator.hasAcceptedSample { runDistanceMeters = total }
             }
         }
     }

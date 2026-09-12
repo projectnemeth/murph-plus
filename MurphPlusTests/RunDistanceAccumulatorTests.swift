@@ -141,6 +141,27 @@ final class RunDistanceAccumulatorTests: XCTestCase {
         XCTAssertEqual(acc.totalMeters, banked, accuracy: 0.001, "the walk during the pause landed in the run")
     }
 
+    func test_hasAcceptedSample_isFalseUntilASamplePassesTheFilters() {
+        var acc = RunDistanceAccumulator()
+        XCTAssertFalse(acc.hasAcceptedSample)
+
+        // Rejected for accuracy: still no anchor.
+        acc.add(sample(northMetres: 0, at: 0, accuracy: 75), now: base)
+        XCTAssertFalse(acc.hasAcceptedSample)
+
+        acc.add(sample(northMetres: 0, at: 1), now: base.addingTimeInterval(1))
+        XCTAssertTrue(acc.hasAcceptedSample)
+    }
+
+    func test_reset_clearsHasAcceptedSample() {
+        var acc = RunDistanceAccumulator()
+        acc.add(sample(northMetres: 0, at: 0), now: base)
+        XCTAssertTrue(acc.hasAcceptedSample)
+
+        acc.reset()
+        XCTAssertFalse(acc.hasAcceptedSample)
+    }
+
     func test_haversine_matchesKnownDistance() {
         // London (51.5007, -0.1246) to Paris (48.8584, 2.2945): ~343 km.
         let london = LocationSample(latitude: 51.5007, longitude: -0.1246, horizontalAccuracy: 5, speed: 0, timestamp: Date())

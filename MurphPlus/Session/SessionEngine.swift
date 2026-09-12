@@ -63,6 +63,14 @@ final class SessionEngine {
         SessionDerivation.elapsed(state, now: .now)
     }
 
+    /// Whether the current run's distance will actually be recorded.
+    ///
+    /// False for a run already in flight when this engine was built: its
+    /// partial total is unrecoverable, so `finishRun` will persist nil. The
+    /// live view reads this so it does not display a number that History will
+    /// then not show.
+    var runDistanceIsTrustworthy: Bool { !runDistanceUntrustworthy }
+
     // MARK: - Transitions
 
     func start() {
@@ -76,7 +84,15 @@ final class SessionEngine {
     func finishRun() {
         // Read before the transition: `perform` closes the measurement window
         // as part of reconciling, and the value is needed for the event.
-        let distance = runDistanceUntrustworthy ? nil : location?.runDistanceMeters
+        //
+        // `isMeasuring` is part of the condition because the controller is a
+        // single app-lifetime instance whose `runDistanceMeters` is never
+        // cleared. Without it, a session that never opened a window — an
+        // indoor one — reads whatever the previous outdoor session left there
+        // and persists it as its own.
+        let distance = (runDistanceUntrustworthy || !isMeasuring)
+            ? nil
+            : location?.runDistanceMeters
         perform(SessionStateMachine.finishRun(state, at: .now, distanceMeters: distance))
     }
 
@@ -155,6 +171,14 @@ final class SessionEngine {
         // typically short, and reacquiring a fix costs more than one saves.
         switch event {
         case .paused:
+            // Deliberately does NOT clear `isMeasuring`: it stays true across
+            // a pause. If it were cleared here, the reconcile on resume would
+            // see `wantMeasuring && !isMeasuring` — the same edge that opens a
+            // brand-new run — and call `beginRun()`, which zeroes the
+            // accumulated distance. `isMeasuring` tracks "does a run's window
+            // belong open", not "is the receiver currently accumulating", and
+            // a pause leaves the run's window conceptually open even though
+            // the receiver itself is stopped.
             location?.stopMeasuring()
         case .resumed:
             if SessionEngine.isRun(state.phase) { location?.resumeRun() }

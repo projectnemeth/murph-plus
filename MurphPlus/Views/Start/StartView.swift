@@ -143,6 +143,14 @@ struct StartView: View {
                 }
                 .fullScreenCover(isPresented: Binding(
                     get: { gate.isWaiting },
+                    // `set` also fires with `false` on NATURAL completion —
+                    // `isWaiting` flips false on its own, and SwiftUI drives
+                    // this setter — so `skip()` runs on an already-finished
+                    // gate too. That's safe only because `LocationFixGate
+                    // .wait()` resets `skipped` as its first synchronous
+                    // statement, so this stray call can't leak into the next
+                    // wait. If that reset ever moves into `skip()` itself,
+                    // this call site regresses silently.
                     set: { if !$0 { gate.skip() } }
                 )) {
                     acquiringOverlay
