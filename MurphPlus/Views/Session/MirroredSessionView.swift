@@ -58,23 +58,42 @@ struct MirroredSessionView: View {
     @State private var finishedAt: Date?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: MurphSpacing.gapSection) {
-            banner
+        // Matches `LiveSessionView`'s own shape: scrolling content as one
+        // sibling, the primary action pinned below it as a second, rather
+        // than one `VStack` sized to its content with the button riding
+        // wherever that content happens to end. Without this split the Done
+        // button sat under a half-empty screen for every completed render.
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: MurphSpacing.gapSection) {
+                    banner
 
-            if didFinish {
-                completedBody
-            } else if let state = lastState {
-                liveBody(state)
+                    if didFinish {
+                        completedBody
+                    } else if let state = lastState {
+                        liveBody(state)
+                    }
+                }
+                .padding(MurphSpacing.gutterScreen)
             }
 
             if didFinish {
-                // Dismissed by the user, not by the store. Leaving on a
-                // completion the reader has actually seen is the whole point of
-                // this state existing.
-                MurphButton(variant: .primary, full: true, title: "Done") { dismiss() }
+                // A second sibling, not folded into the scrolling content —
+                // present only for the completed state, so the live state
+                // (which has no action here at all) never grows an empty
+                // footer or a stray hairline underneath it.
+                VStack(spacing: MurphSpacing.space3) {
+                    // Dismissed by the user, not by the store. Leaving on a
+                    // completion the reader has actually seen is the whole
+                    // point of this state existing.
+                    MurphButton(variant: .primary, full: true, title: "Done") { dismiss() }
+                }
+                .padding(.init(top: MurphSpacing.space4, leading: MurphSpacing.gutterScreen, bottom: MurphSpacing.space8, trailing: MurphSpacing.gutterScreen))
+                .overlay(alignment: .top) {
+                    Rectangle().fill(MurphColor.lineHairline).frame(height: MurphShape.borderHair)
+                }
             }
         }
-        .padding(MurphSpacing.gutterScreen)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .murphScreenBackground()
         .murphNavBar(title: didFinish ? "Workout complete" : "Live session")
@@ -207,12 +226,35 @@ struct MirroredSessionView: View {
             // at `finishedAt`, exactly as `finishedElapsed` is — rather than
             // show nothing or a spinner where a finished workout belongs.
             totalClock(seconds: finishedElapsed ?? SessionDerivation.elapsed(state, now: finishedAt ?? .now))
-            MurphSegmentLadder(segments: MirrorSegment.of(state, now: finishedAt ?? .now))
+            MurphSegmentLadder(segments: frozenSegments(for: state))
         }
     }
 
     private func totalClock(seconds: Double) -> some View {
         MurphClock(label: "Total", seconds: seconds, size: .lg, running: false, tone: .accent)
+    }
+
+    /// The race-fallback ladder, not the live one: `state` is one event
+    /// behind the true terminal state (see `finishedAt`'s comment), so
+    /// whichever row was in progress when the mirror was last observed still
+    /// carries `.current` from `MirrorSegment.of`. Left alone, that row would
+    /// render in the live hazard tone — under a "Workout complete" title and
+    /// a Done button — telling the user a finished workout is still running.
+    /// Every row is over by the time this screen shows at all, so any
+    /// `.current` row is remapped to `.done` here, local to this one
+    /// fallback branch; `MirrorSegment`/`MirrorSegmentState` stay untouched,
+    /// since the live ladder above still needs a genuine `.current` row.
+    private func frozenSegments(for state: SessionState) -> [MirrorSegment] {
+        MirrorSegment.of(state, now: finishedAt ?? .now).map { segment in
+            guard segment.state == .current else { return segment }
+            return MirrorSegment(
+                label: segment.label,
+                value: segment.value,
+                detail: segment.detail,
+                fraction: segment.fraction,
+                state: .done
+            )
+        }
     }
 
     private func phaseLabel(_ phase: SessionPhase) -> String {
