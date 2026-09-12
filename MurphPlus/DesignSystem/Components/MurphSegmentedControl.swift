@@ -71,6 +71,11 @@ struct MurphSegmentedControl: View {
                     }
                 }
                 .buttonStyle(.plain)
+                // Selection is drawn as a bone capsule sliding behind the
+                // label — invisible to VoiceOver, which only ever hears
+                // "button". The trait is the only thing that actually tells
+                // an assistive-tech user which segment is active.
+                .accessibilityAddTraits(selected ? [.isSelected] : [])
             }
         }
         .padding(2)

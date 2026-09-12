@@ -10,13 +10,20 @@ import Foundation
 /// indoor). Collapsing them to one tone would make the runner go looking for
 /// a Settings toggle that was never the issue.
 enum RunModeStatusTone: Equatable {
-    /// A fix has landed — lime500.
+    /// A fix has landed. The consumer decides how loudly to paint this —
+    /// currently a full-colour dot with a muted caption.
     case ready
-    /// Still warming, or the receiver hasn't been asked to start yet — dust500.
+    /// Still warming, or the receiver hasn't been asked to start yet. The
+    /// consumer decides how loudly to paint this — currently a full-colour
+    /// dot with a muted caption.
     case pending
-    /// A fix will never come this session — blood500.
+    /// A fix will never come this session. The consumer decides how loudly
+    /// to paint this — currently the one tone loud enough to colour both the
+    /// dot and the caption text.
     case unavailable
-    /// Indoor. Nothing is wrong; there is simply nothing to report — ash300.
+    /// Indoor. Nothing is wrong; there is simply nothing to report. The
+    /// consumer decides how loudly to paint this — currently a full-colour
+    /// dot with a muted caption.
     case neutral
 }
 
