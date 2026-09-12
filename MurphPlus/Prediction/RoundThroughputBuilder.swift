@@ -4,15 +4,9 @@ import Foundation
 enum RoundThroughputBuilder {
     static func build(session: MurphSession) -> [RoundThroughput] {
         guard let template = session.template,
-              let run1 = session.runSplits.first(where: { $0.runIndex == 1 }) else { return [] }
+              session.runSplits.contains(where: { $0.runIndex == 1 }),
+              let roundsPhaseStart = RoundsPhaseStart.of(session) else { return [] }
 
-        // Prefer the persisted rounds-phase start: it is the true wall-clock
-        // boundary. The run1-derived fallback is net of pause and would land
-        // earlier than the true boundary once a pause occurs during run 1 —
-        // exact for every pre-existing session, since none of them can contain
-        // a pause.
-        let roundsPhaseStart = session.roundsStartedAt
-            ?? run1.startTime.addingTimeInterval(run1.durationSeconds)
         let sortedLogs = session.roundLogs.sorted { $0.roundNumber < $1.roundNumber }
         let repsPerRound = template.repsPerRound
 

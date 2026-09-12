@@ -40,7 +40,7 @@ struct SessionRecap: Equatable {
     /// Always exactly three, in order: Run 1, Rounds, Run 2.
     let segments: [Segment]
     /// Seconds per round, from consecutive `RoundLog.completedAt`, the first
-    /// measured from `roundsStartedAt`.
+    /// measured from the rounds phase's start (see `RoundsPhaseStart`).
     let roundSplits: [Double]
     let fastestRoundSeconds: Double?
     let slowestRoundSeconds: Double?
@@ -133,15 +133,17 @@ struct SessionRecap: Equatable {
 
     /// Seconds per round, net of any pause that fell inside it — the same
     /// reasoning `RoundThroughputBuilder` already applies, so an interruption
-    /// mid-round cannot read here as a very slow round. With no
-    /// `roundsStartedAt` (a session logged before that field existed) there is
-    /// no anchor for round 1, so this returns empty rather than guessing one.
+    /// mid-round cannot read here as a very slow round. The anchor for round 1
+    /// comes from `RoundsPhaseStart`, shared with `RoundThroughputBuilder`, so
+    /// a session missing `roundsStartedAt` still gets real splits here — the
+    /// same way the History screen already falls back for it — instead of the
+    /// two screens disagreeing about the same session.
     private static func roundSplits(session: MurphSession) -> [Double] {
-        guard let roundsStartedAt = session.roundsStartedAt else { return [] }
+        guard let roundsPhaseStart = RoundsPhaseStart.of(session) else { return [] }
         let sortedLogs = session.roundLogs.sorted { $0.roundNumber < $1.roundNumber }
 
         var splits: [Double] = []
-        var previousTimestamp = roundsStartedAt
+        var previousTimestamp = roundsPhaseStart
         for log in sortedLogs {
             let raw = log.completedAt.timeIntervalSince(previousTimestamp) - log.pausedSecondsInRound
             splits.append(max(0, raw))

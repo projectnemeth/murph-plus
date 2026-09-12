@@ -146,6 +146,27 @@ final class SessionRecapTests: XCTestCase {
         XCTAssertEqual(recap.averageRoundSeconds ?? -1, 155.0 / 3.0, accuracy: 0.0001)
     }
 
+    /// With no persisted `roundsStartedAt` (a session logged before that field
+    /// existed), round 1 must still be anchored — via the shared
+    /// `RoundsPhaseStart` helper — from run 1's own end, the same fallback
+    /// `RoundThroughputBuilder` already uses for the History screen. Without
+    /// this, the recap would show no round splits at all for a legacy session
+    /// while History shows real ones for the very same session.
+    func test_roundSplits_fallsBackToRun1EndWhenRoundsStartedAtIsNil() throws {
+        let context = try makeContext()
+        let tmpl = template(rounds: 2)
+        let session = makeSession(
+            context: context, template: tmpl,
+            run1Duration: 300, run2Duration: 300,
+            roundDurations: [60, 90]
+        )
+        session.roundsStartedAt = nil
+
+        let recap = SessionRecap.make(session: session, priorSessions: [])
+
+        XCTAssertEqual(recap.roundSplits, [60, 90])
+    }
+
     /// A zero-round session (or one with no `roundsStartedAt`) must not divide
     /// by zero — a NaN average reaching a SwiftUI frame is a crash-class bug.
     func test_roundSplits_withNoRounds_doesNotDivideByZero() throws {
@@ -310,6 +331,30 @@ final class SessionRecapTests: XCTestCase {
         let prior = priorSession(context: context, template: tmpl, vestOn: false, elapsedSeconds: 500)
 
         let recap = SessionRecap.make(session: session, priorSessions: [prior])
+
+        XCTAssertNil(recap.personalBestDelta)
+    }
+
+    /// An abandoned (or still in-progress) attempt is not a record. Letting a
+    /// faster one count as "best" would tell the user they were beaten by a
+    /// workout nobody finished. If the `.status == .completed` filter were
+    /// ever removed, these two priors — both faster than `session` — would
+    /// become the "best" and the delta below would assert a bogus value
+    /// instead of nil.
+    func test_personalBestDelta_ignoresFasterNonCompletedPriorSessions() throws {
+        let context = try makeContext()
+        let tmpl = template(rounds: 1)
+        let session = makeSession(
+            context: context, template: tmpl,
+            run1Duration: 300, run2Duration: 300,
+            roundDurations: [60]
+        )
+        // Total elapsed for `session` is 660s. Both priors below are faster,
+        // but neither is completed.
+        let abandoned = priorSession(context: context, template: tmpl, vestOn: false, elapsedSeconds: 100, status: .abandoned)
+        let inProgress = priorSession(context: context, template: tmpl, vestOn: false, elapsedSeconds: 50, status: .inProgress)
+
+        let recap = SessionRecap.make(session: session, priorSessions: [abandoned, inProgress])
 
         XCTAssertNil(recap.personalBestDelta)
     }
