@@ -77,7 +77,7 @@ struct PrimaryPage: View {
 
     private var distanceText: String {
         guard let meters = controller.runDistanceMeters else { return "—" }
-        return String(format: "%.2f", meters / 1609.34)
+        return formatMilesValue(meters)
     }
 
     private var remainingText: String {
@@ -87,7 +87,7 @@ struct PrimaryPage: View {
         else { return "miles" }
         // Displayed, never acted on: GPS drift ending a run at 0.97 mi while
         // the user is still running is worse than a button.
-        let remaining = max(0, target - meters / 1609.34)
+        let remaining = max(0, target - milesValue(meters))
         return String(format: "%.2f to go", remaining)
     }
 }
