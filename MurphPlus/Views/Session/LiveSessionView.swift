@@ -33,17 +33,19 @@ struct LiveSessionView: View {
     private var neverStarted: Bool { session.startedAt == nil }
     private var copy: PhaseCopy { phaseCopy[phase] ?? phaseCopy[.notStarted]! }
 
-    /// An em dash rather than "0.00 mi" while the fix is still settling: a
-    /// zero that is really "not measured yet" reads as a broken sensor.
-    private var liveDistanceText: String {
-        guard !session.indoor else { return "Indoor \u{00b7} distance not measured" }
-        guard engine.runDistanceIsTrustworthy else { return "Distance \u{2014}" }
-        guard let meters = location.runDistanceMeters else { return "Distance \u{2014}" }
-        guard let target = session.template?.runDistanceMiles else {
-            return "Distance \(formatMiles(meters))"
-        }
-        let targetText = target.formatted(.number.precision(.fractionLength(2)))
-        return "Distance \(formatMiles(meters)) of \(targetText) mi"
+    /// The clock's pulsing-dot condition: "the clock is live". Shared by the
+    /// big `.lg` clock on non-run phases and the run-phase hero/secondary
+    /// clock, so pausing always stops every pulse at once.
+    private var clockIsRunning: Bool {
+        phase != .notStarted && phase != .completed && !engine.isPaused
+    }
+
+    /// The copy that used to live in `phaseBody`'s run branch, now carried by
+    /// the hero header's trailing note instead.
+    private var heroNote: String? {
+        guard let template = session.template else { return nil }
+        let targetText = template.runDistanceMiles.formatted(.number.precision(.fractionLength(2)))
+        return phase == .run1 ? "\(targetText) MILE OUT" : "\(targetText) MILE BACK"
     }
 
     var body: some View {
@@ -132,21 +134,38 @@ struct LiveSessionView: View {
             .padding(.horizontal, MurphSpacing.gutterScreen)
 
             TimelineView(.periodic(from: .now, by: 1)) { _ in
-                VStack(alignment: .leading, spacing: MurphSpacing.space2) {
-                    MurphClock(
-                        label: "Elapsed",
-                        seconds: engine.totalElapsed,
-                        size: .lg,
-                        running: phase != .notStarted && phase != .completed && !engine.isPaused,
-                        tone: phase == .completed ? .accent : .default
+                if phase == .run1 || phase == .run2 {
+                    let metric = RunHeroMetric.of(
+                        indoor: session.indoor,
+                        distanceIsTrustworthy: engine.runDistanceIsTrustworthy,
+                        distanceMeters: location.runDistanceMeters,
+                        targetMiles: session.template?.runDistanceMiles,
+                        elapsedSeconds: engine.totalElapsed
                     )
-                    // Runs only. During the rounds the receiver is off by
-                    // policy, so there is nothing to show and a frozen number
-                    // would read as a stall.
-                    if phase == .run1 || phase == .run2 {
-                        Text(liveDistanceText)
-                            .murphType(.bodySm)
-                            .foregroundStyle(MurphColor.textMuted)
+                    VStack(alignment: .leading, spacing: MurphSpacing.space2) {
+                        MurphMetricHero(metric: metric, running: clockIsRunning, note: heroNote)
+                        // The hero already carries elapsed time when the
+                        // distance reading isn't trustworthy yet (indoor or
+                        // waiting for GPS) — showing the clock again below
+                        // would duplicate the same number.
+                        if metric.kind == .distance {
+                            MurphClock(
+                                label: "Elapsed",
+                                seconds: engine.totalElapsed,
+                                size: .sm,
+                                running: clockIsRunning
+                            )
+                        }
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: MurphSpacing.space2) {
+                        MurphClock(
+                            label: "Elapsed",
+                            seconds: engine.totalElapsed,
+                            size: .lg,
+                            running: clockIsRunning,
+                            tone: phase == .completed ? .accent : .default
+                        )
                     }
                 }
             }
@@ -227,15 +246,6 @@ struct LiveSessionView: View {
                         .murphType(.bodySm)
                         .foregroundStyle(MurphColor.textAccent)
                 }
-            }
-        } else if phase == .run1 || phase == .run2, let template = session.template {
-            HStack(spacing: MurphSpacing.space4) {
-                Image(systemName: "figure.run")
-                    .font(.system(size: 30))
-                    .foregroundStyle(MurphColor.hazard500)
-                Text("\(template.runDistanceMiles.formatted(.number.precision(.fractionLength(2)))) mile \(phase == .run1 ? "out" : "back")")
-                    .murphType(.display3())
-                    .foregroundStyle(MurphColor.textPrimary)
             }
         }
     }
