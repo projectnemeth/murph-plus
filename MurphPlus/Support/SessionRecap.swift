@@ -36,6 +36,14 @@ struct SessionRecap: Equatable {
         let isImprovement: Bool
     }
 
+    /// The raw number `total` is formatted from. Exposed separately so a
+    /// caller that needs a `Double` (`MurphClock(seconds:)`, which cannot
+    /// consume a pre-formatted string) reads the same one computation this
+    /// type already made, rather than independently re-deriving
+    /// `session.totalElapsedSeconds ?? 0` a second time — which is exactly
+    /// the duplication that let a caller and this type quietly agree on
+    /// everything except which of them is the source of truth.
+    let totalSeconds: Double
     let total: String
     /// Always exactly three, in order: Run 1, Rounds, Run 2.
     let segments: [Segment]
@@ -83,6 +91,7 @@ struct SessionRecap: Equatable {
         ]
 
         return SessionRecap(
+            totalSeconds: totalSeconds,
             total: formatDuration(totalSeconds),
             segments: segments,
             roundSplits: roundSplits,
@@ -184,11 +193,20 @@ struct SessionRecap: Equatable {
     /// already applies. With no prior matching session the delta is nil — a
     /// first attempt has nothing to beat, and badging one would claim a best
     /// that does not exist.
+    ///
+    /// The SUBJECT session must itself be `.completed`, not just the
+    /// candidates. `SessionState.apply` sets `completedAt` on `.abandoned`
+    /// too (and the race in `MirroredSessionView` can momentarily resolve to
+    /// a still-`.inProgress` row for the same id), so without this guard a
+    /// quit-early or not-yet-finished total — real or falling back to 0 —
+    /// would compare as "faster" against any real prior best and paint a
+    /// personal best that was never earned.
     private static func personalBestDelta(
         session: MurphSession,
         totalSeconds: Double,
         priorSessions: [MurphSession]
     ) -> PersonalBestDelta? {
+        guard session.status == .completed else { return nil }
         guard let templateID = session.template?.id else { return nil }
 
         let candidates = priorSessions.filter {

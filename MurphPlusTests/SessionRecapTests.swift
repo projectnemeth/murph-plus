@@ -359,6 +359,47 @@ final class SessionRecapTests: XCTestCase {
         XCTAssertNil(recap.personalBestDelta)
     }
 
+    /// Neither a session still in progress (no `completedAt` yet — the exact
+    /// row `SessionImporter.apply` upserts mid-workout, on every checkpoint,
+    /// long before the workout ends) nor an abandoned one (which DOES get a
+    /// real `completedAt` — `SessionState.apply` sets it on `.abandoned`
+    /// too) is a personal best, no matter how its total compares to a real
+    /// prior best. Without the guard on the subject session's own
+    /// `status == .completed`, the in-progress session's total falls back to
+    /// 0 (never a real time) and reads as "faster" than anything, and the
+    /// abandoned session's real-but-truncated total (quit at 18:00) reads as
+    /// faster than a real 51:12 best — both would fabricate a personal best
+    /// for a workout that was never actually won.
+    func test_make_onASessionThatIsNotYetTerminal_producesNoPersonalBestDelta() throws {
+        let context = try makeContext()
+        let tmpl = template(rounds: 1)
+        // A real prior best, slower than either subject session's total
+        // below — so a badge here can only be spurious.
+        let fasterPrior = priorSession(context: context, template: tmpl, vestOn: false, elapsedSeconds: 3072) // 51:12
+
+        // Not yet terminal: no `completedAt` at all.
+        let inProgress = MurphSession(template: tmpl, vestOn: false)
+        context.insert(inProgress)
+        inProgress.startedAt = Date(timeIntervalSince1970: 0)
+        inProgress.status = .inProgress
+
+        let inProgressRecap = SessionRecap.make(session: inProgress, priorSessions: [fasterPrior])
+        XCTAssertNil(inProgressRecap.personalBestDelta)
+        XCTAssertEqual(inProgressRecap.total, formatDuration(0))
+        XCTAssertEqual(inProgressRecap.totalSeconds, 0)
+
+        // Abandoned: `completedAt` IS set, so the total is real (18:00), not
+        // a fallback zero — the guard must still hold.
+        let abandoned = MurphSession(template: tmpl, vestOn: false)
+        context.insert(abandoned)
+        abandoned.startedAt = Date(timeIntervalSince1970: 0)
+        abandoned.completedAt = Date(timeIntervalSince1970: 1080) // 18:00
+        abandoned.status = .abandoned
+
+        let abandonedRecap = SessionRecap.make(session: abandoned, priorSessions: [fasterPrior])
+        XCTAssertNil(abandonedRecap.personalBestDelta)
+    }
+
     /// This session is already in history by the time this runs. If the
     /// injected list (as it would from a real history query) still contains
     /// this session's own row, it must be excluded — otherwise the session is

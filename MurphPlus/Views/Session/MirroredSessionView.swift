@@ -154,26 +154,39 @@ struct MirroredSessionView: View {
 
     @ViewBuilder
     private func liveBody(_ state: SessionState) -> some View {
-        TimelineView(.periodic(from: .now, by: 1)) { _ in
-            MurphClock(
-                label: "Elapsed",
-                seconds: SessionDerivation.elapsed(state, now: .now),
-                size: .lg,
-                running: !state.isPaused && !mirror.isStale
-            )
-        }
+        // The clock and the segment ladder both read "now", and both must
+        // read the SAME one: `MirrorSegment.of` used to be computed outside
+        // `TimelineView`, so its in-progress row only advanced when a live
+        // event re-evaluated `body` — every ~5s on a heart-rate sample, or
+        // never if heart-rate stopped arriving — while the hero clock beside
+        // it, inside `TimelineView`, ticked every second. The two visibly
+        // disagreed. Grouping both under the same `TimelineView` closure,
+        // reading its own `context.date`, is what keeps them in lockstep.
+        // The badges are along for the ride only for ordering — cheap to
+        // re-evaluate every second, and `@Query` is not touched by any of
+        // this, so this costs nothing extra per tick.
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            VStack(alignment: .leading, spacing: MurphSpacing.gapSection) {
+                MurphClock(
+                    label: "Elapsed",
+                    seconds: SessionDerivation.elapsed(state, now: context.date),
+                    size: .lg,
+                    running: !state.isPaused && !mirror.isStale
+                )
 
-        MurphFlowLayout {
-            MurphBadge(tone: .live, dot: true, title: phaseLabel(state.phase))
-            if state.isPaused {
-                MurphBadge(tone: .abandoned, title: "Paused")
-            }
-            if let bpm = state.latestHeartRate {
-                MurphBadge(title: "\(bpm) bpm")
+                MurphFlowLayout {
+                    MurphBadge(tone: .live, dot: true, title: phaseLabel(state.phase))
+                    if state.isPaused {
+                        MurphBadge(tone: .abandoned, title: "Paused")
+                    }
+                    if let bpm = state.latestHeartRate {
+                        MurphBadge(title: "\(bpm) bpm")
+                    }
+                }
+
+                MurphSegmentLadder(segments: MirrorSegment.of(state, now: context.date))
             }
         }
-
-        MurphSegmentLadder(segments: MirrorSegment.of(state, now: .now))
 
         if state.phase == .rounds, let template = state.template {
             MurphRoundCounter(
@@ -187,15 +200,26 @@ struct MirroredSessionView: View {
     // MARK: - Completed
 
     /// The saved session, looked up by the id captured before the mirror
-    /// could clear it. `nil` only in the race: the terminal live event has
-    /// already arrived (`didFinish`), but `SessionImporter`'s durable
-    /// checkpoint has not landed yet, so nothing with this id exists in
-    /// `allSessions` for the moment. `completedBody` falls back to the cached
-    /// mirror state in exactly that gap and upgrades automatically once this
-    /// query re-fetches with the saved row in it.
+    /// could clear it, AND required to have actually finished importing.
+    ///
+    /// `completedAt != nil` is load-bearing, not decorative:
+    /// `SessionImporter.apply` upserts a row for this same id on every
+    /// checkpoint *during* the workout, long before it ends, so by the time
+    /// the terminal live event lands a row already exists — with
+    /// `status == .inProgress` and `completedAt == nil`. Matching on id
+    /// alone resolved to that mid-workout row: `totalElapsedSeconds` is nil
+    /// for it, `SessionRecap.make` fell back to a 0-second total, and 0
+    /// beats any real prior best, so the screen painted a fabricated
+    /// personal best on top of a workout that had not even finished. This
+    /// guard is what makes the race fallback below reachable at all — nil
+    /// only in the true race: the terminal live event has already arrived
+    /// (`didFinish`), but no row with `completedAt` set exists yet for this
+    /// id. `completedBody` falls back to the cached mirror state in exactly
+    /// that gap and upgrades automatically once this query re-fetches with
+    /// the finished row in it.
     private var completedSession: MurphSession? {
         guard didFinish, let lastSessionID else { return nil }
-        return allSessions.first { $0.id == lastSessionID }
+        return allSessions.first { $0.id == lastSessionID && $0.completedAt != nil }
     }
 
     @ViewBuilder
@@ -205,15 +229,42 @@ struct MirroredSessionView: View {
             // Grouped into one accessibility element so the total and the PR
             // line read as one sentence rather than two disconnected stops.
             VStack(alignment: .leading, spacing: MurphSpacing.space1) {
-                totalClock(seconds: session.totalElapsedSeconds ?? 0)
+                // `recap.totalSeconds`, not `session.totalElapsedSeconds`
+                // again: the same number `recap.total` was formatted from,
+                // read once rather than re-derived a second time here.
+                totalClock(seconds: recap.totalSeconds)
                 // The element the user asked for. Lime for an improvement,
                 // muted (never red) for a slower time — a completed Murph is
                 // not a failure. Nil renders nothing at all: no row, no
-                // placeholder, for a first-ever attempt with no best to beat.
+                // placeholder, for a first-ever attempt with no best to beat,
+                // and — since `SessionRecap` now guards on the session
+                // itself being `.completed` — for an abandoned attempt too.
                 if let delta = recap.personalBestDelta {
                     Text(delta.text)
                         .murphType(.bodyLg)
                         .foregroundStyle(delta.isImprovement ? MurphColor.lime500 : MurphColor.textMuted)
+                }
+                // Peak heart rate is the headline reason this screen reads
+                // the saved session instead of the mirror at all — the live
+                // `SessionState` only ever keeps `latestHeartRate`, never a
+                // peak (see this type's own top-of-file comment) — so it (and
+                // the average round pace already summarized per-row in the
+                // spine below) is surfaced explicitly here rather than only
+                // being true in the data. Each fact is independent and each
+                // is omitted on its own when nil, never a placeholder.
+                if let stats = statsLine(recap) {
+                    Text(stats)
+                        .murphType(.bodySm)
+                        .foregroundStyle(MurphColor.textMuted)
+                }
+                // Same "↓" convention as an improving personal best — a
+                // negative split is a good thing, never rendered as muted
+                // fine print or, worse, as a scold; nil (a positive split)
+                // renders nothing.
+                if let negativeSplit = recap.negativeSplit {
+                    Text(negativeSplit)
+                        .murphType(.bodySm)
+                        .foregroundStyle(MurphColor.lime500)
                 }
             }
             .accessibilityElement(children: .combine)
@@ -232,6 +283,16 @@ struct MirroredSessionView: View {
 
     private func totalClock(seconds: Double) -> some View {
         MurphClock(label: "Total", seconds: seconds, size: .lg, running: false, tone: .accent)
+    }
+
+    /// "N bpm peak · M:SS avg round", either half dropped when its fact is
+    /// nil, the whole line dropped when both are — never a lone " · " and
+    /// never a placeholder for a fact this session doesn't have.
+    private func statsLine(_ recap: SessionRecap) -> String? {
+        var parts: [String] = []
+        if let peak = recap.peakHeartRate { parts.append("\(peak) bpm peak") }
+        if let avg = recap.averageRoundSeconds { parts.append("\(formatDuration(avg)) avg round") }
+        return parts.isEmpty ? nil : parts.joined(separator: " \u{00b7} ")
     }
 
     /// The race-fallback ladder, not the live one: `state` is one event
