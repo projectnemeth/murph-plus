@@ -150,6 +150,73 @@ final class MirrorSegmentsTests: XCTestCase {
         XCTAssertEqual(segments[2].value, "1:00")
     }
 
+    /// The earlier paused test only ever drives a *closed* pause (paused then
+    /// resumed). A runner who checks the phone mid-pause hits the other path
+    /// — `pausedAt` set, no matching `resumed` yet — and nothing above
+    /// exercises it. `pausedSeconds(between:and:)` counts an open pause up to
+    /// the query's own `end`, so it must still exclude the open stretch from
+    /// "now" rather than reading it as still running.
+    func test_anOpenPauseWithNoResumeYetStillExcludesFromTheCurrentSegmentValue() {
+        let state = SessionState.replay([
+            started(rounds: 2),
+            .runFinished(index: 1, at: t(300), distanceMeters: nil),
+            .roundCompleted(number: 1, at: t(400)),
+            .roundCompleted(number: 2, at: t(500)),
+            .paused(at: t(520)),
+            // No `.resumed` — the runner is still looking at a paused watch.
+        ])
+        let now = t(600)
+        let segments = MirrorSegment.of(state, now: now)
+
+        // 100s of wall clock since run 2 started; the open pause (t520–t600,
+        // 80s) must still be excluded, leaving 20s.
+        XCTAssertEqual(segments[2].state, .current)
+        XCTAssertEqual(segments[2].value, "0:20")
+    }
+
+    // MARK: - Abandoned mid-phase degradation
+
+    /// An abandon clears `currentPhaseStartedAt` to nil in *every* phase, not
+    /// just run 2 — so the "current" run segment has no live clock left to
+    /// read. This pins the fallback deliberately chosen for that gap (the
+    /// same unstarted look, not a crash): a later reader must not "fix" this
+    /// nil-guard into a force-unwrap of `currentPhaseStartedAt`.
+    func test_anAbandonedMidRun1SessionDegradesToTheUnstartedLookRatherThanCrashing() {
+        let state = SessionState.replay([
+            started(rounds: 2),
+            .abandoned(at: t(50)),
+        ])
+        let segments = MirrorSegment.of(state, now: t(9_999))
+
+        XCTAssertEqual(segments[0].state, .current)
+        XCTAssertEqual(segments[0].value, "\u{2014}")
+        XCTAssertEqual(segments[0].fraction, 0)
+    }
+
+    /// `completedRounds` and `roundTimestamps` are meant to always move
+    /// together (every `roundCompleted` event appends to both), so
+    /// `roundsStartedAt`/`roundTimestamps.last` being unavailable while
+    /// rounds read as "all done" should never happen through normal replay.
+    /// It is still reachable by hand-built state (e.g. a decoding bug), and
+    /// the guard for it must degrade — not force-unwrap and crash — if that
+    /// invariant is ever broken.
+    func test_roundsAllDoneWithNoTimestampsDegradesRatherThanForceUnwrapping() {
+        var state = SessionState()
+        state.template = spec(rounds: 2)
+        state.startedAt = t(0)
+        state.phase = .run2
+        state.completedRounds = 2
+        // `roundsStartedAt` and `roundTimestamps` deliberately left at their
+        // defaults (nil / empty) — the invariant violation under test.
+
+        let segments = MirrorSegment.of(state, now: t(100))
+
+        XCTAssertEqual(segments[1].state, .ahead)
+        XCTAssertEqual(segments[1].value, "\u{2014}")
+        XCTAssertNil(segments[1].detail)
+        XCTAssertEqual(segments[1].fraction, 0)
+    }
+
     // MARK: - Zero rounds complete
 
     /// Zero completed rounds must omit the average entirely — printing

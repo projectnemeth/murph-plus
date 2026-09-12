@@ -113,7 +113,7 @@ struct MirrorSegment: Equatable {
             guard let roundsStartedAt = session.roundsStartedAt, let end = session.roundTimestamps.last else {
                 return MirrorSegment(label: label, value: unstartedValue, detail: nil, fraction: 0, state: .ahead)
             }
-            let duration = duration(from: roundsStartedAt, to: end, session: session)
+            let duration = SessionDerivation.netDuration(session, from: roundsStartedAt, to: end)
             return MirrorSegment(
                 label: label,
                 value: formatDuration(duration),
@@ -155,15 +155,14 @@ struct MirrorSegment: Equatable {
     /// The in-progress segment's elapsed-so-far, net of pauses. `nil` only
     /// when `currentPhaseStartedAt` itself is nil, which happens after an
     /// abandon — there is then no start point left to measure from.
+    ///
+    /// Routed through `SessionDerivation.netDuration` — the same net-of-pause
+    /// formula `elapsed` and `roundDurations` use — rather than a private
+    /// copy, so this file and `SessionDerivation` cannot quietly disagree
+    /// about what "net of pause" means.
     private static func elapsedSincePhaseStart(_ session: SessionState, now: Date) -> TimeInterval? {
         guard let phaseStart = session.currentPhaseStartedAt else { return nil }
-        return duration(from: phaseStart, to: now, session: session)
-    }
-
-    private static func duration(from start: Date, to end: Date, session: SessionState) -> TimeInterval {
-        let gross = end.timeIntervalSince(start)
-        let paused = session.pausedSeconds(between: start, and: end)
-        return max(0, gross - paused)
+        return SessionDerivation.netDuration(session, from: phaseStart, to: now)
     }
 
     /// Guards the division: a zero or negative denominator (no elapsed time
