@@ -8,12 +8,10 @@ import Foundation
 /// Watch-collected sessions, so every v1 and every phone-owned session renders
 /// the bare duration. That is the common path, and it is what the tests pin.
 enum SessionDetailValue {
-    private static let metresPerMile = 1609.34
-
     static func run(duration: String, distanceMeters: Double?, avgHeartRate: Int?) -> String {
         var parts = [duration]
         if let distanceMeters {
-            parts.append(String(format: "%.2f mi", distanceMeters / metresPerMile))
+            parts.append(formatMiles(distanceMeters))
         }
         if let avgHeartRate {
             parts.append("\(avgHeartRate) bpm")

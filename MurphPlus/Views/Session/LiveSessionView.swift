@@ -18,6 +18,7 @@ private let phaseCopy: [SessionPhase: PhaseCopy] = [
 
 struct LiveSessionView: View {
     let engine: SessionEngine
+    let location: PhoneLocationController
     let onFinished: () -> Void
 
     @Environment(PhoneSyncCoordinator.self) private var sync
@@ -31,6 +32,18 @@ struct LiveSessionView: View {
     /// leaving here discards rather than logs.
     private var neverStarted: Bool { session.startedAt == nil }
     private var copy: PhaseCopy { phaseCopy[phase] ?? phaseCopy[.notStarted]! }
+
+    /// An em dash rather than "0.00 mi" while the fix is still settling: a
+    /// zero that is really "not measured yet" reads as a broken sensor.
+    private var liveDistanceText: String {
+        guard !session.indoor else { return "Indoor \u{00b7} distance not measured" }
+        guard let meters = location.runDistanceMeters else { return "Distance \u{2014}" }
+        guard let target = session.template?.runDistanceMiles else {
+            return "Distance \(formatMiles(meters))"
+        }
+        let targetText = target.formatted(.number.precision(.fractionLength(2)))
+        return "Distance \(formatMiles(meters)) of \(targetText) mi"
+    }
 
     var body: some View {
         NavigationStack {
@@ -118,13 +131,23 @@ struct LiveSessionView: View {
             .padding(.horizontal, MurphSpacing.gutterScreen)
 
             TimelineView(.periodic(from: .now, by: 1)) { _ in
-                MurphClock(
-                    label: "Elapsed",
-                    seconds: engine.totalElapsed,
-                    size: .lg,
-                    running: phase != .notStarted && phase != .completed && !engine.isPaused,
-                    tone: phase == .completed ? .accent : .default
-                )
+                VStack(alignment: .leading, spacing: MurphSpacing.space2) {
+                    MurphClock(
+                        label: "Elapsed",
+                        seconds: engine.totalElapsed,
+                        size: .lg,
+                        running: phase != .notStarted && phase != .completed && !engine.isPaused,
+                        tone: phase == .completed ? .accent : .default
+                    )
+                    // Runs only. During the rounds the receiver is off by
+                    // policy, so there is nothing to show and a frozen number
+                    // would read as a stall.
+                    if phase == .run1 || phase == .run2 {
+                        Text(liveDistanceText)
+                            .murphType(.bodySm)
+                            .foregroundStyle(MurphColor.textMuted)
+                    }
+                }
             }
             .padding(.init(top: MurphSpacing.space6, leading: MurphSpacing.gutterScreen, bottom: MurphSpacing.space5, trailing: MurphSpacing.gutterScreen))
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -138,7 +161,13 @@ struct LiveSessionView: View {
                         VStack(alignment: .leading, spacing: 0) {
                             MurphSectionHeader("Logged")
                             ForEach(session.runSplits.sorted { $0.runIndex < $1.runIndex }, id: \.persistentModelID) { split in
-                                MurphSplitRow(label: "Run \(split.runIndex)", value: formatDuration(split.durationSeconds), tone: .accent)
+                                MurphSplitRow(
+                                    label: "Run \(split.runIndex)",
+                                    value: split.distanceMeters.map {
+                                        "\(formatDuration(split.durationSeconds)) \u{00b7} \(formatMiles($0))"
+                                    } ?? formatDuration(split.durationSeconds),
+                                    tone: .accent
+                                )
                             }
                         }
                     }

@@ -38,7 +38,7 @@ struct RootTabView: View {
             get: { liveEngine.map { LiveSessionWrapper(engine: $0) } },
             set: { liveEngine = $0?.engine }
         )) { wrapper in
-            LiveSessionView(engine: wrapper.engine) {
+            LiveSessionView(engine: wrapper.engine, location: location) {
                 liveEngine = nil
             }
         }
