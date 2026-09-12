@@ -6,9 +6,13 @@
 # Watch, and never noticing the Watch kept running the old code. Bumping is
 # therefore not a step you can forget — it happens here, before the build.
 #
-# The watch app rides inside the phone app at MurphPlus.app/Watch, so there is
-# nothing to install to the Watch directly. watchOS copies it across once it
-# sees the phone holding a newer build, which is what the bump guarantees.
+# The watch app rides inside the phone app at MurphPlus.app/Watch, and watchOS
+# is supposed to copy it across once it sees the phone holding a newer build.
+# In practice that did not happen for a development-signed build, and installing
+# by hand from the Watch app's Available Apps list failed outright with "This
+# app could not be installed at this time." So this installs the watch app
+# directly over the debug connection instead, which works, rather than trusting
+# a propagation step with no way to tell whether it ran.
 
 set -eu
 
@@ -21,9 +25,10 @@ TEAM=${DEVELOPMENT_TEAM:-K8ZFCMC7ND}
 DERIVED=${DERIVED_DATA:-/tmp/murph-device-build}
 
 device=${1:-}
+watch=${2:-}
 if [ -z "$device" ]; then
-    echo "usage: $0 <iphone-device-id>" >&2
-    echo "find it with: xcrun devicectl list devices" >&2
+    echo "usage: $0 <iphone-device-id> [watch-device-id]" >&2
+    echo "find both with: xcrun devicectl list devices" >&2
     exit 2
 fi
 
@@ -46,3 +51,10 @@ echo "installed build: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$a
 echo "embedded watch build: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Watch/MurphPlusWatch.app/Info.plist")"
 
 xcrun devicectl device install app --device "$device" "$app"
+
+if [ -n "$watch" ]; then
+    xcrun devicectl device install app --device "$watch" "$app/Watch/MurphPlusWatch.app"
+else
+    echo "note: no watch id given, so the Watch still holds whatever it had." >&2
+    echo "      re-run with the watch id as a second argument." >&2
+fi
