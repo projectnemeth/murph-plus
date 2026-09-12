@@ -81,12 +81,22 @@ struct StartView: View {
                             // the footer should fade into the page rather than
                             // stop at a hard edge the user reads as the end of
                             // the screen.
+                            //
+                            // The offset must equal the gradient's height, so
+                            // the gradient sits entirely *above* the footer and
+                            // its fully-opaque end lands exactly on the footer's
+                            // top edge, where the solid fill below takes over.
+                            // Any smaller offset leaves the seam part-way up the
+                            // ramp — at -space12 (48) against a 64pt gradient it
+                            // was 75% opaque there, so content stepped from
+                            // 25%-visible to invisible in one pixel, which is
+                            // the hard edge this scrim exists to avoid.
                             LinearGradient(
                                 colors: [MurphColor.surfacePage.opacity(0), MurphColor.surfacePage],
                                 startPoint: .top, endPoint: .bottom
                             )
                             .frame(height: MurphSpacing.space16)
-                            .offset(y: -MurphSpacing.space12)
+                            .offset(y: -MurphSpacing.space16)
                             .allowsHitTesting(false)
                         }
                         .background(MurphColor.surfacePage)
@@ -357,6 +367,18 @@ struct StartView: View {
                 )
             )
 
+            // The dot and the sentence are deliberately not the same volume.
+            // The dot carries the state — it is what makes the caption
+            // readable at a glance, so it takes the full tone colour in all
+            // four cases. The sentence only explains the dot, and it is
+            // ambient status sitting a few inches from the hazard-orange
+            // Begin button: at full tone it was the second-loudest thing on
+            // the screen and competed with the primary action. So the text
+            // stays muted except for `.unavailable`, which is the one state
+            // that is actually a problem the runner has to go and fix.
+            //
+            // Please don't "restore" the text to `color(for:)` to match the
+            // dot — the mismatch is the point.
             HStack(spacing: MurphSpacing.space2) {
                 // 8pt, taken from the spacing scale rather than written as a
                 // literal so the dot tracks the scale if it ever moves.
@@ -364,12 +386,17 @@ struct StartView: View {
                     .fill(color(for: status.tone))
                     .frame(width: MurphSpacing.space2, height: MurphSpacing.space2)
                 Text(status.text)
-                    // `.microDense`, not `.micro`: this is a data line, not a
-                    // label. `micro`'s 0.14em label tracking would add ~40pt of
-                    // letter-spacing across a sentence this long — see the
-                    // `microDense` doc comment.
-                    .murphType(.microDense)
-                    .foregroundStyle(color(for: status.tone))
+                    // `.bodySm`, not one of the mono micro styles. This is a
+                    // sentence, and the design system reserves mono for
+                    // numbers and short caps labels — every other long string
+                    // on this screen (template name, vest label) is
+                    // sentence-case DM Sans, which is also why
+                    // `RunModeStatus`'s strings are written sentence-case.
+                    // The mono styles would additionally have set the longest
+                    // string ("Location access is off…") in uppercase and
+                    // wrapped it at default type.
+                    .murphType(.bodySm)
+                    .foregroundStyle(textColor(for: status.tone))
             }
             .padding(.top, MurphSpacing.space1)
             // One element, so VoiceOver reads the caption as a sentence rather
@@ -383,12 +410,27 @@ struct StartView: View {
         }
     }
 
+    /// The dot's colour: the full tone, every case.
     private func color(for tone: RunModeStatusTone) -> Color {
         switch tone {
         case .ready: MurphColor.statusComplete
         case .pending: MurphColor.dust500
         case .unavailable: MurphColor.statusDanger
         case .neutral: MurphColor.textMuted
+        }
+    }
+
+    /// The caption's colour: muted, except where the tone is a problem.
+    ///
+    /// Three of the four tones say "this is working" or "nothing to report",
+    /// and a sentence saying that does not need to be loud. Only
+    /// `.unavailable` asks the runner to do something about it, so it is the
+    /// only one that keeps a tone colour — which is what makes it stand out at
+    /// all, since it is now the only coloured caption on the screen.
+    private func textColor(for tone: RunModeStatusTone) -> Color {
+        switch tone {
+        case .unavailable: MurphColor.statusDanger
+        case .ready, .pending, .neutral: MurphColor.textMuted
         }
     }
 
