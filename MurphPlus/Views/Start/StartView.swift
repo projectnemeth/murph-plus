@@ -51,73 +51,45 @@ struct StartView: View {
 
                         VStack(alignment: .leading, spacing: MurphSpacing.gapSection) {
                             workoutSection
-                            locationSection
+                            runSection
                             vestSection
-
-                            // `isStale` is time-derived, so `@Observable` alone
-                            // will not re-render when it flips; the timer forces
-                            // a re-evaluation once a second.
-                            TimelineView(.periodic(from: .now, by: 1)) { _ in
-                                if sync.mirror.isMirroring {
-                                    // Never offer Start while the Watch owns a
-                                    // session. Two live sessions is the one conflict
-                                    // this design refuses to resolve, so the guard is
-                                    // to make it unreachable rather than to merge it
-                                    // afterwards.
-                                    //
-                                    // A button into `navigationDestination`, not
-                                    // a `NavigationLink`. A link's label
-                                    // disappears the moment the Watch's session
-                                    // ends, which pops the mirror out from under
-                                    // a user still reading it — the completion
-                                    // state `MirroredSessionView` now draws
-                                    // would never be seen. Ending the
-                                    // presentation is the user's to do.
-                                    Button {
-                                        showMirror = true
-                                    } label: {
-                                        MurphBanner(
-                                            tone: .info,
-                                            text: "Session running on Apple Watch · Tap to follow along",
-                                            navigates: true
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                } else {
-                                    MurphButton(
-                                        variant: .primary,
-                                        size: .lg,
-                                        full: true,
-                                        icon: Image(systemName: "play.fill"),
-                                        title: "Begin"
-                                    ) {
-                                        guard let selectedTemplate else { return }
-                                        let weight = vestOn ? Int(vestWeightText) : nil
-                                        let setup = SessionSetup(
-                                            template: selectedTemplate, vestOn: vestOn,
-                                            vestWeightLbs: weight, indoor: indoor
-                                        )
-                                        pendingSetup = setup
-                                        Task {
-                                            // Returns immediately for every
-                                            // state except `.acquiring`: Indoor
-                                            // is `.off`, a refusal is `.denied`
-                                            // and waiting for a fix that will
-                                            // never come is pure delay, and the
-                                            // ordinary case is already `.fixed`.
-                                            await gate.wait { location.fixState }
-                                            guard let staged = pendingSetup else { return }
-                                            pendingSetup = nil
-                                            onBegin(staged)
-                                        }
-                                    }
-                                    .disabled(selectedTemplate == nil)
-                                }
-                            }
                         }
                         .padding(.horizontal, MurphSpacing.gutterScreen)
-                        .padding(.bottom, MurphSpacing.space8)
+                        .padding(.bottom, MurphSpacing.space4)
                     }
+                }
+                // The screen's primary action is pinned, not scrolled. It used
+                // to be the last child of the scrolling `VStack`, which put it
+                // underneath `RootTabView`'s tab bar — the tab items drew over
+                // the bottom half of `Begin`. `safeAreaInset` is the fix rather
+                // than a `Spacer` or extra bottom padding: it insets the scroll
+                // view's *own* safe area, so the footer sits above the tab bar
+                // structurally, and the content scrolls to a stop above it,
+                // instead of clearing the bar only because the content happened
+                // to be short enough.
+                //
+                // The `ScrollView` stays. At default type nothing scrolls, but
+                // at accessibility sizes the sections still overflow, and the
+                // footer holds its place while they do.
+                .safeAreaInset(edge: .bottom) {
+                    startFooter
+                        .padding(.horizontal, MurphSpacing.gutterScreen)
+                        .padding(.top, MurphSpacing.space4)
+                        .padding(.bottom, MurphSpacing.space4)
+                        .background(alignment: .top) {
+                            // A scrim, not a solid fill: content scrolling under
+                            // the footer should fade into the page rather than
+                            // stop at a hard edge the user reads as the end of
+                            // the screen.
+                            LinearGradient(
+                                colors: [MurphColor.surfacePage.opacity(0), MurphColor.surfacePage],
+                                startPoint: .top, endPoint: .bottom
+                            )
+                            .frame(height: MurphSpacing.space16)
+                            .offset(y: -MurphSpacing.space12)
+                            .allowsHitTesting(false)
+                        }
+                        .background(MurphColor.surfacePage)
                 }
                 .murphScreenBackground()
                 .toolbar(.hidden, for: .navigationBar)
@@ -166,22 +138,48 @@ struct StartView: View {
     /// Says what survives, not just what goes. Sessions outlive their template
     /// by design (`.nullify`, so a tidy-up cannot erase logged times), but they
     /// lose its name — and a user who finds that out afterwards has no way back.
+    ///
+    /// Two shapes, because the trash icon in the section header is always
+    /// enabled: if deletion is blocked, this dialog is where the rule gets
+    /// stated.
+    @ViewBuilder
     private func deleteDialog(for template: WorkoutTemplate) -> some View {
-        let affected = TemplateDeletion.affectedSessionCount(for: template)
-        return MurphDialog(
-            title: "Delete \u{201c}\(template.name)\u{201d}?",
-            body: affected == 0
-                ? "No sessions have used this template. This can\u{2019}t be undone."
-                : "\(affected) session\(affected == 1 ? "" : "s") used this template. "
-                    + "They\u{2019}re kept, but will lose its name. This can\u{2019}t be undone.",
-            onDismiss: { showDeleteTemplateConfirm = false }
-        ) {
-            MurphButton(variant: .danger, full: true, title: "Delete") {
-                showDeleteTemplateConfirm = false
-                deleteSelectedTemplate(template)
+        if let blocker = TemplateDeletion.blocker(for: template) {
+            // Named rather than merely disabled: a greyed-out delete with no
+            // explanation reads as a bug, not a rule. That reasoning used to
+            // justify a banner under the card; now that the control lives in
+            // the section header it justifies letting the tap through to a
+            // dialog that says why, instead of dimming the icon and leaving the
+            // user to guess.
+            MurphDialog(
+                title: "Can\u{2019}t delete \u{201c}\(template.name)\u{201d}",
+                body: message(for: blocker),
+                onDismiss: { showDeleteTemplateConfirm = false }
+            ) {
+                // Cancel only. There is no Delete to offer — the point of the
+                // dialog is that the action is unavailable, and a disabled
+                // Delete beside it would only restate that less clearly.
+                MurphButton(variant: .secondary, full: true, title: "Cancel") {
+                    showDeleteTemplateConfirm = false
+                }
             }
-            MurphButton(variant: .secondary, full: true, title: "Cancel") {
-                showDeleteTemplateConfirm = false
+        } else {
+            let affected = TemplateDeletion.affectedSessionCount(for: template)
+            MurphDialog(
+                title: "Delete \u{201c}\(template.name)\u{201d}?",
+                body: affected == 0
+                    ? "No sessions have used this template. This can\u{2019}t be undone."
+                    : "\(affected) session\(affected == 1 ? "" : "s") used this template. "
+                        + "They\u{2019}re kept, but will lose its name. This can\u{2019}t be undone.",
+                onDismiss: { showDeleteTemplateConfirm = false }
+            ) {
+                MurphButton(variant: .danger, full: true, title: "Delete") {
+                    showDeleteTemplateConfirm = false
+                    deleteSelectedTemplate(template)
+                }
+                MurphButton(variant: .secondary, full: true, title: "Cancel") {
+                    showDeleteTemplateConfirm = false
+                }
             }
         }
     }
@@ -208,9 +206,23 @@ struct StartView: View {
 
     private var workoutSection: some View {
         VStack(alignment: .leading, spacing: MurphSpacing.gapStack) {
+            // Delete sits here beside New template rather than as a full-width
+            // danger button under the card: the destructive action is chrome
+            // for the template you're looking at, not a step in setting up a
+            // workout, and at full width it read as one.
             MurphSectionHeader("Workout") {
-                MurphButton(variant: .ghost, size: .sm, title: "New template") {
-                    showTemplateEditor = true
+                HStack(spacing: MurphSpacing.space1) {
+                    MurphButton(variant: .ghost, size: .sm, title: "New template") {
+                        showTemplateEditor = true
+                    }
+                    if selectedTemplate != nil {
+                        MurphIconButton(
+                            variant: .ghost,
+                            label: "Delete template",
+                            systemImage: "trash",
+                            size: 16
+                        ) { showDeleteTemplateConfirm = true }
+                    }
                 }
             }
 
@@ -266,21 +278,6 @@ struct StartView: View {
                         }
                     }
                 }
-
-                if let blocker = TemplateDeletion.blocker(for: template) {
-                    // Named rather than merely disabled: a greyed-out delete
-                    // with no explanation reads as a bug, not a rule.
-                    MurphBanner(tone: .info, text: message(for: blocker))
-                } else {
-                    MurphButton(
-                        variant: .danger,
-                        size: .sm,
-                        icon: Image(systemName: "trash"),
-                        title: "Delete template"
-                    ) {
-                        showDeleteTemplateConfirm = true
-                    }
-                }
             }
         }
     }
@@ -315,7 +312,13 @@ struct StartView: View {
     private var vestSection: some View {
         VStack(alignment: .leading, spacing: MurphSpacing.gapStack) {
             MurphSectionHeader("Vest")
-            MurphToggle(label: "Wearing a weighted vest", description: "Defaults to 20 lbs if left blank", isOn: $vestOn)
+            // No `description:` here on purpose. It used to read "Defaults to
+            // 20 lbs if left blank", which the weight field's own `20`
+            // placeholder says already — and says at the moment it matters,
+            // with the field in front of you. Two lines for one fact cost ~18pt
+            // on the screen whose primary action was being pushed off the
+            // bottom. Please don't put it back.
+            MurphToggle(label: "Wearing a weighted vest", isOn: $vestOn)
             if vestOn {
                 MurphTextField(text: $vestWeightText, placeholder: "20", suffix: "lbs", keyboardType: .numberPad)
             }
@@ -324,15 +327,128 @@ struct StartView: View {
 
     /// The receiver warms from the moment this screen appears, which is what
     /// makes the start gate almost never visible: by the time a template is
-    /// chosen and the vest is set, a fix has usually landed.
-    private var locationSection: some View {
-        VStack(alignment: .leading, spacing: MurphSpacing.gapStack) {
-            MurphSectionHeader("Location")
-            MurphToggle(
-                label: "Indoor",
-                description: "Treadmill or track. Skips GPS, so the run distance isn\u{2019}t measured.",
-                isOn: $indoor
+    /// chosen and the vest is set, a fix has usually landed. The caption below
+    /// the control is where that warming becomes visible — `location.fixState`
+    /// is `@Observable`, so it re-renders itself as the fix lands and needs no
+    /// timer of its own.
+    ///
+    /// A two-segment control rather than the `Indoor` toggle this replaced: a
+    /// toggle names one state and leaves the other implied, so "off" had to be
+    /// read as "outdoor" by inference. Both choices are now written down, with
+    /// Outdoor first because it is the default (`indoor == false`).
+    private var runSection: some View {
+        let status = RunModeStatus.of(indoor: indoor, fixState: location.fixState)
+        return VStack(alignment: .leading, spacing: MurphSpacing.gapStack) {
+            MurphSectionHeader("Run")
+
+            MurphSegmentedControl(
+                segments: [
+                    MurphSegment(label: "Outdoor", systemImage: "location.fill"),
+                    MurphSegment(label: "Indoor", systemImage: "figure.run.treadmill")
+                ],
+                // A projection over the existing `Bool`, not a new `@State`.
+                // `indoor`'s type is load-bearing: `SessionSetup`,
+                // `reconcileWarmUp()` and `.onChange(of: indoor)` all read it,
+                // and a second source of truth beside it would be one more
+                // thing to keep in sync for no gain.
+                selection: Binding(
+                    get: { indoor ? "Indoor" : "Outdoor" },
+                    set: { indoor = ($0 == "Indoor") }
+                )
             )
+
+            HStack(spacing: MurphSpacing.space2) {
+                // 8pt, taken from the spacing scale rather than written as a
+                // literal so the dot tracks the scale if it ever moves.
+                Circle()
+                    .fill(color(for: status.tone))
+                    .frame(width: MurphSpacing.space2, height: MurphSpacing.space2)
+                Text(status.text)
+                    // `.microDense`, not `.micro`: this is a data line, not a
+                    // label. `micro`'s 0.14em label tracking would add ~40pt of
+                    // letter-spacing across a sentence this long — see the
+                    // `microDense` doc comment.
+                    .murphType(.microDense)
+                    .foregroundStyle(color(for: status.tone))
+            }
+            .padding(.top, MurphSpacing.space1)
+            // One element, so VoiceOver reads the caption as a sentence rather
+            // than announcing the dot — which is a redundant restatement of the
+            // tone the words already carry — as its own stop.
+            .accessibilityElement(children: .combine)
+            // `RunModeStatus` is `Equatable`, so this fires on a real change of
+            // either the dot or the words, and moves them together instead of
+            // letting the colour pop a frame ahead of the text.
+            .animation(MurphMotion.snap(), value: status)
+        }
+    }
+
+    private func color(for tone: RunModeStatusTone) -> Color {
+        switch tone {
+        case .ready: MurphColor.statusComplete
+        case .pending: MurphColor.dust500
+        case .unavailable: MurphColor.statusDanger
+        case .neutral: MurphColor.textMuted
+        }
+    }
+
+    /// The screen's primary action, pinned to the bottom by the
+    /// `safeAreaInset` in `body` rather than scrolled with the sections.
+    private var startFooter: some View {
+        // `isStale` is time-derived, so `@Observable` alone will not re-render
+        // when it flips; the timer forces a re-evaluation once a second.
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            if sync.mirror.isMirroring {
+                // Never offer Start while the Watch owns a session. Two live
+                // sessions is the one conflict this design refuses to resolve,
+                // so the guard is to make it unreachable rather than to merge
+                // it afterwards.
+                //
+                // A button into `navigationDestination`, not a
+                // `NavigationLink`. A link's label disappears the moment the
+                // Watch's session ends, which pops the mirror out from under a
+                // user still reading it — the completion state
+                // `MirroredSessionView` now draws would never be seen. Ending
+                // the presentation is the user's to do.
+                Button {
+                    showMirror = true
+                } label: {
+                    MurphBanner(
+                        tone: .info,
+                        text: "Session running on Apple Watch · Tap to follow along",
+                        navigates: true
+                    )
+                }
+                .buttonStyle(.plain)
+            } else {
+                MurphButton(
+                    variant: .primary,
+                    size: .lg,
+                    full: true,
+                    icon: Image(systemName: "play.fill"),
+                    title: "Begin"
+                ) {
+                    guard let selectedTemplate else { return }
+                    let weight = vestOn ? Int(vestWeightText) : nil
+                    let setup = SessionSetup(
+                        template: selectedTemplate, vestOn: vestOn,
+                        vestWeightLbs: weight, indoor: indoor
+                    )
+                    pendingSetup = setup
+                    Task {
+                        // Returns immediately for every state except
+                        // `.acquiring`: Indoor is `.off`, a refusal is
+                        // `.denied` and waiting for a fix that will never come
+                        // is pure delay, and the ordinary case is already
+                        // `.fixed`.
+                        await gate.wait { location.fixState }
+                        guard let staged = pendingSetup else { return }
+                        pendingSetup = nil
+                        onBegin(staged)
+                    }
+                }
+                .disabled(selectedTemplate == nil)
+            }
         }
     }
 
