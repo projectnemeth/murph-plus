@@ -1,6 +1,12 @@
 // MurphPlus/DesignSystem/Components/MurphSplitRow.swift
 // Split breakdown row in session detail / live session. Bars are relative
 // within one session only (components/data/SplitRow.jsx).
+//
+// `MurphSegmentLadder`'s own row (`MurphSegmentLadderRow`, in
+// MurphSegmentLadder.swift) deliberately copies this row's exact metrics —
+// label/value styles, bar height, corner radius — so the two read as one
+// family; a change to either one's shared numbers should be checked against
+// the other.
 import SwiftUI
 
 enum MurphSplitRowTone {
