@@ -63,7 +63,7 @@ struct MurphMetricHero: View {
                             .animation(MurphMotion.easeOut, value: progress)
                     }
                 }
-                .frame(height: 8)
+                .frame(height: MurphSpacing.space2)
             }
         }
         // One sentence, not four fragments: VoiceOver would otherwise read
