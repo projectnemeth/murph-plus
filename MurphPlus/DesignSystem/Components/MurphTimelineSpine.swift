@@ -156,12 +156,20 @@ private struct RoundPaceChart: View {
         return max(2, containerHeight * CGFloat(seconds / slowestSeconds))
     }
 
-    /// Fastest wins ties with the slowest (a one-round chart, or a session
-    /// where every round took the same time) — a session's only round reads
-    /// as its best, never its worst.
+    /// Highlighting exists to show spread. When the fastest and slowest
+    /// round are exactly equal — every round tied, not just a one-round
+    /// chart — there is no spread to point at, so neither extreme is
+    /// highlighted and every bar renders neutral. (This equality check looks
+    /// redundant next to the `==` checks below, since a tie makes both of
+    /// those true for every bar too, but without it every bar would render
+    /// lime "fastest" — telling the user all twenty rounds were
+    /// simultaneously their fastest, which is not a fact about the session.)
     private func color(for seconds: Double) -> Color {
-        if let fastestSeconds, seconds == fastestSeconds { return MurphColor.lime500 }
-        if let slowestSeconds, seconds == slowestSeconds { return MurphColor.dust500 }
+        guard let fastestSeconds, let slowestSeconds, fastestSeconds != slowestSeconds else {
+            return MurphColor.bone300
+        }
+        if seconds == fastestSeconds { return MurphColor.lime500 }
+        if seconds == slowestSeconds { return MurphColor.dust500 }
         return MurphColor.bone300
     }
 

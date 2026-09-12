@@ -4,37 +4,6 @@
 // where that row sits relative to the runner right now.
 import SwiftUI
 
-/// Turns a `formatDuration` string ("8:42") into VoiceOver's spoken form
-/// ("8 minutes 42 seconds"), so a duration is never read digit-by-digit as
-/// "eight colon four two". There is no existing spoken-duration precedent
-/// elsewhere in this app to follow — this is the first place a formatted
-/// duration reaches an accessibility label — so this helper is new, not
-/// copied. Not `private`: `MurphTimelineSpine` needs the same conversion for
-/// its own segment rows and its round-pace chart's summary, and duplicating
-/// it there would risk the two components quietly disagreeing about how a
-/// duration is spoken.
-enum MirrorSpokenDuration {
-    /// `nil` for anything that isn't exactly "M:SS" — in particular the
-    /// ladder's own "\u{2014}" placeholder for a segment that hasn't started,
-    /// which must be omitted from the sentence entirely, never spoken as
-    /// "em dash".
-    static func phrase(from value: String) -> String? {
-        let parts = value.split(separator: ":")
-        guard parts.count == 2,
-              let minutes = Int(parts[0]), minutes >= 0,
-              let seconds = Int(parts[1]), seconds >= 0
-        else { return nil }
-
-        func unit(_ count: Int, _ name: String) -> String {
-            "\(count) \(name)\(count == 1 ? "" : "s")"
-        }
-
-        if minutes == 0 { return unit(seconds, "second") }
-        if seconds == 0 { return unit(minutes, "minute") }
-        return "\(unit(minutes, "minute")) \(unit(seconds, "second"))"
-    }
-}
-
 struct MurphSegmentLadder: View {
     let segments: [MirrorSegment]
 
