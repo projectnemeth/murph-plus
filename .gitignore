@@ -5,3 +5,4 @@ xcuserdata/
 .build/
 .superpowers/
 .claude/worktrees/
+Config/BuildNumber.xcconfig

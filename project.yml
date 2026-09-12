@@ -3,6 +3,13 @@ options:
   bundleIdPrefix: com.projectnemeth
   deploymentTarget:
     iOS: "17.0"
+# Project level, not per target, on purpose: Apple requires a watch app and its
+# companion iOS app to carry identical version and build numbers, and two
+# targets reading one file cannot drift apart. See Config/Version.xcconfig for
+# why these settings have to exist at all.
+configFiles:
+  Debug: Config/Version.xcconfig
+  Release: Config/Version.xcconfig
 targets:
   MurphPlus:
     type: application

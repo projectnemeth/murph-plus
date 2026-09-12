@@ -1,0 +1,29 @@
+// Config/Version.xcconfig
+//
+// The app's version, shared by every target from one place.
+//
+// This exists because the phone and watch apps shipped with NO version at all:
+// `GENERATE_INFOPLIST_FILE` synthesises the version keys from these two build
+// settings, and with both unset Xcode wrote an Info.plist carrying neither —
+// silently overriding the 1.0/1 sitting in the tracked Info.plist files. The
+// installed watch app reported a blank version and a blank build, and watchOS
+// decides whether to push an update to the Watch by comparing the embedded
+// watch app's build against the installed one. With nothing to compare, that
+// comparison has no answer, and a rebuilt app could sit on the phone without
+// ever reaching the wrist.
+//
+// Applied at the PROJECT level (see `configFiles` in project.yml) rather than
+// per target, deliberately: Apple requires a watch app and its companion iOS
+// app to carry identical version and build numbers, and two targets reading
+// one file cannot drift apart.
+
+MARKETING_VERSION = 1.0
+
+// The fallback build number, used when nothing has generated one — a fresh
+// clone, or CI. `scripts/bump-build.sh` writes the real value into
+// BuildNumber.xcconfig, which is git-ignored so that bumping a build never
+// dirties the working tree.
+CURRENT_PROJECT_VERSION = 1
+
+// Optional on purpose: the build is expected to work without it.
+#include? "BuildNumber.xcconfig"
