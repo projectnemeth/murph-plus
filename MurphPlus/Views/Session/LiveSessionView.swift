@@ -42,9 +42,20 @@ struct LiveSessionView: View {
 
     /// The copy that used to live in `phaseBody`'s run branch, now carried by
     /// the hero header's trailing note instead.
+    ///
+    /// Explicit about which phase reads "OUT" vs "BACK" rather than a ternary
+    /// on `phase == .run1` — that ternary silently answered "BACK" for
+    /// `.rounds` and `.completed` too, and was safe only by accident, because
+    /// its one caller sits inside the hero's run branch. Returning `nil` for
+    /// every other phase means a future caller can't get a wrong answer
+    /// quietly.
     private var heroNote: String? {
-        guard let template = session.template else { return nil }
-        let targetText = template.runDistanceMiles.formatted(.number.precision(.fractionLength(2)))
+        guard let template = session.template, phase == .run1 || phase == .run2 else { return nil }
+        // Same "%.2f" route as the hero numeral (`RunHeroMetric`), not
+        // `.formatted(...)`: this note sits directly above the hero's caption,
+        // which already made this switch for the same reason — see
+        // `RunHeroMetric.of`.
+        let targetText = String(format: "%.2f", template.runDistanceMiles)
         return phase == .run1 ? "\(targetText) MILE OUT" : "\(targetText) MILE BACK"
     }
 
@@ -158,15 +169,13 @@ struct LiveSessionView: View {
                         }
                     }
                 } else {
-                    VStack(alignment: .leading, spacing: MurphSpacing.space2) {
-                        MurphClock(
-                            label: "Elapsed",
-                            seconds: engine.totalElapsed,
-                            size: .lg,
-                            running: clockIsRunning,
-                            tone: phase == .completed ? .accent : .default
-                        )
-                    }
+                    MurphClock(
+                        label: "Elapsed",
+                        seconds: engine.totalElapsed,
+                        size: .lg,
+                        running: clockIsRunning,
+                        tone: phase == .completed ? .accent : .default
+                    )
                 }
             }
             .padding(.init(top: MurphSpacing.space6, leading: MurphSpacing.gutterScreen, bottom: MurphSpacing.space5, trailing: MurphSpacing.gutterScreen))

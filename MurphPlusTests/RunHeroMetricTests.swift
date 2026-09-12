@@ -34,8 +34,16 @@ final class RunHeroMetricTests: XCTestCase {
 
     /// An untrustworthy fix must fall back to the elapsed hero even though a
     /// distance figure exists — a jumpy reading rendered as a giant confident
-    /// numeral would be worse than no numeral at all.
-    func test_untrustworthyDistanceFallsBackToElapsed() {
+    /// numeral would be worse than no numeral at all. Its caption must NOT
+    /// claim to be waiting for GPS: this is the regression a resumed mid-run
+    /// session hits. `SessionEngine` marks a session untrustworthy at launch
+    /// whenever it relaunches mid-run (`runDistanceUntrustworthy =
+    /// isRun(state.phase)` at init) and only clears the flag inside
+    /// `beginRun()`, at the START of the NEXT run leg — so for the rest of
+    /// THIS leg, GPS is perfectly healthy and simply has nothing to recover.
+    /// "Waiting for GPS…" here would promise a fix that is never coming for
+    /// the whole mile.
+    func test_untrustworthyDistanceFallsBackToElapsedWithoutClaimingGPSIsPending() {
         let metric = RunHeroMetric.of(
             indoor: false,
             distanceIsTrustworthy: false,
@@ -45,7 +53,26 @@ final class RunHeroMetricTests: XCTestCase {
         )
         XCTAssertEqual(metric.kind, .elapsed)
         XCTAssertEqual(metric.value, "1:06")
-        XCTAssertEqual(metric.caption, "Waiting for GPS\u{2026}")
+        XCTAssertEqual(metric.caption, "Distance not recorded for this run")
+        XCTAssertNil(metric.progress)
+        XCTAssertEqual(metric.accessibilityText, "Elapsed 1:06. Distance not recorded for this run.")
+    }
+
+    /// An untrustworthy fix outranks `distanceMeters == nil`: even when no
+    /// figure exists yet, an untrustworthy session must still get the "not
+    /// recorded" caption, not "Waiting for GPS…" — the two conditions can
+    /// coincide (nothing has ever been measured on this leg) and the more
+    /// specific truth must win.
+    func test_untrustworthyBeatsNilMeters() {
+        let metric = RunHeroMetric.of(
+            indoor: false,
+            distanceIsTrustworthy: false,
+            distanceMeters: nil,
+            targetMiles: 1.0,
+            elapsedSeconds: 66
+        )
+        XCTAssertEqual(metric.kind, .elapsed)
+        XCTAssertEqual(metric.caption, "Distance not recorded for this run")
         XCTAssertNil(metric.progress)
     }
 

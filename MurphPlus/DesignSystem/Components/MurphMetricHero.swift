@@ -70,6 +70,19 @@ struct MurphMetricHero: View {
         // the label, the numeral, the caption and the bar's percentage as
         // four separate stops.
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(metric.accessibilityText)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    /// For `.elapsed`, `note` carries the run's target distance ("0.25 MILE
+    /// OUT") — the only place that figure appears, since the elapsed hero's
+    /// own `accessibilityText` never mentions it. Dropping `note` here would
+    /// regress a VoiceOver user back to having no target for the whole run
+    /// (this screen used to render it as its own accessible `Text`, before
+    /// the hero replaced that branch). For `.distance`, `accessibilityText`
+    /// already states the target ("Distance 0.12 of 0.25 miles"), so folding
+    /// `note` in as well would just repeat it.
+    private var accessibilityLabel: String {
+        guard metric.kind == .elapsed, let note else { return metric.accessibilityText }
+        return "\(metric.accessibilityText) \(note)"
     }
 }

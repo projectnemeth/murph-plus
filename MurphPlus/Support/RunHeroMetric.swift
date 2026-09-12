@@ -37,13 +37,31 @@ struct RunHeroMetric: Equatable {
     ///   - distanceIsTrustworthy: Whether the current distance reading is
     ///     fit to show as a giant confident numeral. A jumpy or stale
     ///     reading rendered huge would mislead a runner more than showing
-    ///     nothing.
+    ///     nothing. This is not the same fact as `distanceMeters == nil` —
+    ///     see below.
     ///   - distanceMeters: The current distance, or `nil` before a figure
     ///     exists at all.
     ///   - targetMiles: The template's run distance, or `nil` for a free run
     ///     with nothing to divide against.
     ///   - elapsedSeconds: The run clock, used whenever the hero falls back
     ///     to elapsed time.
+    ///
+    /// `!distanceIsTrustworthy` and `distanceMeters == nil` both fall back to
+    /// the elapsed hero, but they are not the same state, and the fallback
+    /// caption must say which one is true. `distanceMeters == nil` means the
+    /// receiver genuinely has not produced a figure yet — GPS is warming, and
+    /// "Waiting for GPS…" is a promise that will be kept shortly.
+    /// `!distanceIsTrustworthy` means something else entirely:
+    /// `SessionEngine` sets `runDistanceUntrustworthy = isRun(state.phase)` at
+    /// init (`SessionEngine.swift:45`) — that is, whenever the app relaunches
+    /// into a session that was already mid-run — and clears it only inside
+    /// `beginRun()`, when a *new* run leg starts (`SessionEngine.swift:360`).
+    /// So on a resumed leg the flag cannot clear before that leg ends: GPS is
+    /// perfectly healthy, but this leg's distance is unrecoverable for its
+    /// entire remaining length. Telling the runner "Waiting for GPS…" there
+    /// promises a fix that is never coming. `!distanceIsTrustworthy` is
+    /// checked first because it is the more specific truth and can coincide
+    /// with `distanceMeters == nil`.
     static func of(
         indoor: Bool,
         distanceIsTrustworthy: Bool,
@@ -64,7 +82,18 @@ struct RunHeroMetric: Equatable {
             )
         }
 
-        guard distanceIsTrustworthy, let distanceMeters else {
+        guard distanceIsTrustworthy else {
+            return RunHeroMetric(
+                kind: .elapsed,
+                label: "Elapsed",
+                value: elapsedValue,
+                caption: "Distance not recorded for this run",
+                progress: nil,
+                accessibilityText: "Elapsed \(elapsedValue). Distance not recorded for this run."
+            )
+        }
+
+        guard let distanceMeters else {
             return RunHeroMetric(
                 kind: .elapsed,
                 label: "Elapsed",
@@ -86,7 +115,12 @@ struct RunHeroMetric: Equatable {
         // at all. Dividing by it anyway would either crash or draw a bar for
         // a distance that was never asked for.
         if let targetMiles, targetMiles > 0 {
-            let targetText = targetMiles.formatted(.number.precision(.fractionLength(2)))
+            // Same "%.2f" route as the numeral above (`formatMilesValue`),
+            // not `.formatted(...)`: the two numbers sit directly adjacent at
+            // 96pt, and `.formatted` is locale-aware (comma decimals) while
+            // "%.2f" is not, so a comma-decimal locale would otherwise show
+            // two adjacent numbers with disagreeing separators.
+            let targetText = String(format: "%.2f", targetMiles)
             let progress = min(1.0, max(0.0, miles / targetMiles))
             return RunHeroMetric(
                 kind: .distance,
