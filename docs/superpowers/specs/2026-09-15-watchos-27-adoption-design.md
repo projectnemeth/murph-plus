@@ -266,8 +266,19 @@ struct WatchPrimaryButton: View {
 }
 ```
 
-applied as `.handGestureShortcut(isPrimaryGesture ? .primaryAction : nil)` — or,
-if the modifier does not accept a nil shortcut, behind a plain `if`.
+The modifier's real signature, read from the watchOS 27.0 SDK's
+`SwiftUI.swiftinterface`, is
+
+```swift
+@available(watchOS 11.0, *)
+func handGestureShortcut(_ shortcut: HandGestureShortcut, isEnabled: Bool = true) -> some View
+```
+
+— a non-optional shortcut with an `isEnabled` flag, not the optional an earlier
+draft of this spec guessed at. That is the better shape anyway: the modifier is
+applied unconditionally and toggled with `isEnabled:`. Branching on whether to
+apply it at all would change the button's view identity every time the shortcut
+moved between pages, which is once per swipe for the whole workout.
 
 `PrimaryPage` and `ClockPage` each take the flag from `WatchLiveView`, which
 passes `selection == 1` and `selection == 2` respectively. At most one button
