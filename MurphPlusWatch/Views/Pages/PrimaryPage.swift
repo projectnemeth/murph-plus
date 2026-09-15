@@ -7,6 +7,9 @@ import SwiftUI
 struct PrimaryPage: View {
     @Bindable var controller: WatchSessionController
     let elapsedText: String
+    /// True only while this page is the one on screen — see
+    /// `WatchPrimaryButton.isPrimaryGesture`.
+    var claimsHandGesture = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,7 +28,13 @@ struct PrimaryPage: View {
                 WatchPrimaryButton(title: "Resume") { controller.resume() }
                     .padding(.horizontal, MurphSpacing.space2)
             } else {
-                WatchPrimaryButton(title: advanceTitle) { controller.advance() }
+                // Only the advancing action claims Double Tap; Resume never
+                // does. A gesture that means "log a round" here and "resume"
+                // one screen away is one you have to look at the watch to
+                // predict, which is the opposite of what it is for.
+                WatchPrimaryButton(
+                    title: advanceTitle, isPrimaryGesture: claimsHandGesture
+                ) { controller.advance() }
                     .padding(.horizontal, MurphSpacing.space2)
             }
         }

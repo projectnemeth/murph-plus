@@ -43,10 +43,22 @@ struct WatchLiveView: View {
                 )
                 .tag(0)
 
-                PrimaryPage(controller: controller, elapsedText: elapsedText)
+                // `selection` is what decides which advancing button owns
+                // Double Tap: only one element on screen may be the primary
+                // action, and this is the only type that knows which page the
+                // user is looking at. Pages 0 and 3 claim nothing, so a Double
+                // Tap there scrolls toward the button rather than firing an
+                // action that is off screen.
+                PrimaryPage(
+                    controller: controller, elapsedText: elapsedText,
+                    claimsHandGesture: selection == 1
+                )
                     .tag(1)
 
-                ClockPage(controller: controller, elapsedText: elapsedText)
+                ClockPage(
+                    controller: controller, elapsedText: elapsedText,
+                    claimsHandGesture: selection == 2
+                )
                     .tag(2)
 
                 NowPlayingPage()

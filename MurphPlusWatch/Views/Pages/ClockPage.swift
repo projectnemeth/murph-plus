@@ -6,6 +6,8 @@ import SwiftUI
 struct ClockPage: View {
     @Bindable var controller: WatchSessionController
     let elapsedText: String
+    /// See `PrimaryPage.claimsHandGesture`.
+    var claimsHandGesture = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -36,7 +38,10 @@ struct ClockPage: View {
                 WatchPrimaryButton(title: "Resume") { controller.resume() }
                     .padding(.horizontal, MurphSpacing.space2)
             } else {
-                WatchPrimaryButton(title: controller.state.phase == .rounds ? "Round Done" : "End Run") {
+                WatchPrimaryButton(
+                    title: controller.state.phase == .rounds ? "Round Done" : "End Run",
+                    isPrimaryGesture: claimsHandGesture
+                ) {
                     controller.advance()
                 }
                 .padding(.horizontal, MurphSpacing.space2)
